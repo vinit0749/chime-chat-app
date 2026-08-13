@@ -5,14 +5,25 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ChimeLayout from "./layouts/ChimeLayout";
 
+import ProtectedRoute from "./components/ProtectedRoute";
+import PublicRoute from "./components/PublicRoute";
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/app" element={<ChimeLayout />} />
+
+        {/* Routes for logged-out users */}
+        <Route element={<PublicRoute />}>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+        </Route>
+
+        {/* Routes for logged-in users */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/app" element={<ChimeLayout />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );

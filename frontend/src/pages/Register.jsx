@@ -1,23 +1,20 @@
 import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 function Register() {
-  const [formData, setFormData] = useState({
-    username: "",
-    email: "",
-    password: "",
-  });
+  const navigate = useNavigate();
 
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
+  const handleRegister = async (event) => {
+    event.preventDefault();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+    setMessage("");
+    setIsLoading(true);
 
     try {
       const response = await fetch("http://localhost:5000/api/auth/register", {
@@ -25,90 +22,141 @@ function Register() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+        }),
       });
 
       const data = await response.json();
 
-      setMessage(data.message);
+      if (!response.ok) {
+        setMessage(data.message);
+        setIsLoading(false);
+        return;
+      }
+
+      navigate("/login", {
+        state: {
+          message: "Account created successfully. You can now log in.",
+        },
+      });
     } catch (error) {
-      console.error("Registration failed:", error);
-      setMessage("Something went wrong");
+      console.error("Registration error:", error);
+      setMessage("Unable to connect to server.");
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-chime-background px-4">
-      <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-8 shadow-sm">
-        <h1 className="text-3xl font-bold text-chime-text">
-          Create your Chime account
-        </h1>
+    <main className="flex min-h-screen items-center justify-center bg-chime-chat px-4 py-8 sm:px-6">
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-chime-background p-6 shadow-sm sm:p-8">
+        {/* Brand */}
+        <div className="mb-8 text-center">
+          <Link
+            to="/"
+            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-chime-gold text-2xl shadow-sm transition hover:bg-chime-bright"
+          >
+            🔔
+          </Link>
 
-        <p className="mt-2 text-chime-secondary">
-          Join Chime and start connecting.
-        </p>
+          <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-chime-text">
+            Create your account
+          </h1>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <p className="mt-2 text-sm leading-6 text-chime-secondary">
+            Join Chime and start connecting with your people.
+          </p>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleRegister} className="space-y-5">
           <div>
-            <label className="mb-1 block text-sm font-semibold text-chime-text">
+            <label
+              htmlFor="username"
+              className="mb-2 block text-sm font-semibold text-chime-text"
+            >
               Username
             </label>
 
             <input
+              id="username"
               type="text"
-              name="username"
-              value={formData.username}
-              onChange={handleChange}
-              placeholder="Enter your username"
-              className="w-full rounded-lg border border-stone-300 px-4 py-2.5 outline-none focus:border-chime-gold"
+              placeholder="Choose a username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              className="w-full rounded-xl border border-stone-200 bg-chime-chat px-4 py-3 text-sm text-chime-text outline-none transition placeholder:text-chime-secondary focus:border-chime-gold focus:ring-2 focus:ring-chime-gold/20"
+              required
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-semibold text-chime-text">
+            <label
+              htmlFor="email"
+              className="mb-2 block text-sm font-semibold text-chime-text"
+            >
               Email
             </label>
 
             <input
+              id="email"
               type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="Enter your email"
-              className="w-full rounded-lg border border-stone-300 px-4 py-2.5 outline-none focus:border-chime-gold"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="w-full rounded-xl border border-stone-200 bg-chime-chat px-4 py-3 text-sm text-chime-text outline-none transition placeholder:text-chime-secondary focus:border-chime-gold focus:ring-2 focus:ring-chime-gold/20"
+              required
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-semibold text-chime-text">
+            <label
+              htmlFor="password"
+              className="mb-2 block text-sm font-semibold text-chime-text"
+            >
               Password
             </label>
 
             <input
+              id="password"
               type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
               placeholder="Create a password"
-              className="w-full rounded-lg border border-stone-300 px-4 py-2.5 outline-none focus:border-chime-gold"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="w-full rounded-xl border border-stone-200 bg-chime-chat px-4 py-3 text-sm text-chime-text outline-none transition placeholder:text-chime-secondary focus:border-chime-gold focus:ring-2 focus:ring-chime-gold/20"
+              required
             />
           </div>
 
           <button
             type="submit"
-            className="w-full rounded-lg bg-chime-gold px-4 py-2.5 font-bold text-chime-text hover:opacity-90"
+            disabled={isLoading}
+            className="w-full rounded-xl bg-chime-gold px-5 py-3.5 font-bold text-chime-text transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Create Account
+            {isLoading ? "Creating account..." : "Create account"}
           </button>
         </form>
 
+        {/* Error */}
         {message && (
-          <p className="mt-4 text-center text-sm font-semibold text-chime-text">
+          <p className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-center text-sm text-red-600">
             {message}
           </p>
         )}
+
+        {/* Login */}
+        <p className="mt-7 text-center text-sm text-chime-secondary">
+          Already have an account?{" "}
+          <Link
+            to="/login"
+            className="font-semibold text-chime-text transition hover:text-chime-gold"
+          >
+            Log in
+          </Link>
+        </p>
       </div>
-    </div>
+    </main>
   );
 }
 

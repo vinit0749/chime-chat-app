@@ -21,6 +21,35 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Accepted friends
+    friends: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
+    // Friend requests sent by this user
+    friendRequestsSent: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
+    // Friend requests received by this user
+    friendRequestsReceived: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   {
     timestamps: true,

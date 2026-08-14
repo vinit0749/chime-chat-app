@@ -4,18 +4,18 @@ import { Menu } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import ChatArea from "../components/ChatArea";
 import Friends from "../components/Friends";
+import Profile from "../components/Profile";
+import PublicProfile from "../components/PublicProfile";
 import { authFetch } from "../utils/authFetch";
 
 function ChimeLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [activeView, setActiveView] = useState("chat");
+  const [profileUserId, setProfileUserId] = useState(null);
 
   /*
     Keep the selected DM's friendship status up to date.
-
-    This matters because friendship can change from another
-    account/device while this DM is already open.
   */
   useEffect(() => {
     if (!selectedChat || selectedChat.type !== "dm") {
@@ -67,16 +67,78 @@ function ChimeLayout() {
     return () => clearInterval(interval);
   }, [selectedChat?.type, selectedChat?.user?._id]);
 
+  /*
+    Select a chat.
+  */
   const handleSelectChat = (chat) => {
     setSelectedChat(chat);
+    setProfileUserId(null);
     setActiveView("chat");
     setIsSidebarOpen(false);
   };
 
+  /*
+    Open Friends.
+  */
   const handleOpenFriends = () => {
     setSelectedChat(null);
+    setProfileUserId(null);
     setActiveView("friends");
     setIsSidebarOpen(false);
+  };
+
+  /*
+    Open your own profile/settings.
+  */
+  const handleOpenProfile = () => {
+    setSelectedChat(null);
+    setProfileUserId(null);
+    setActiveView("profile");
+    setIsSidebarOpen(false);
+  };
+
+  /*
+    Open another user's public profile.
+  */
+  const handleOpenUserProfile = (userId) => {
+    const actualUserId = typeof userId === "object" ? userId?._id : userId;
+
+    if (!actualUserId) {
+      console.error("Cannot open public profile: missing user ID.");
+      return;
+    }
+
+    setSelectedChat(null);
+    setProfileUserId(actualUserId);
+    setActiveView("public-profile");
+    setIsSidebarOpen(false);
+  };
+
+  /*
+    Open a DM from a public profile.
+  */
+  const handleMessageFromProfile = (user) => {
+    if (!user?._id) {
+      return;
+    }
+
+    setSelectedChat({
+      type: "dm",
+      user,
+      isFriend: Boolean(user.isFriend),
+    });
+
+    setProfileUserId(null);
+    setActiveView("chat");
+    setIsSidebarOpen(false);
+  };
+
+  /*
+    Go back from a profile.
+  */
+  const handleProfileBack = () => {
+    setProfileUserId(null);
+    setActiveView("chat");
   };
 
   return (
@@ -85,6 +147,8 @@ function ChimeLayout() {
       <Sidebar
         onSelectChat={handleSelectChat}
         onOpenFriendRequests={handleOpenFriends}
+        onOpenProfile={handleOpenProfile}
+        onOpenUserProfile={handleOpenUserProfile}
         activeView={activeView}
       />
 
@@ -104,6 +168,8 @@ function ChimeLayout() {
               onClose={() => setIsSidebarOpen(false)}
               onSelectChat={handleSelectChat}
               onOpenFriendRequests={handleOpenFriends}
+              onOpenProfile={handleOpenProfile}
+              onOpenUserProfile={handleOpenUserProfile}
               activeView={activeView}
             />
           </div>
@@ -127,9 +193,24 @@ function ChimeLayout() {
 
         {/* Main View */}
         {activeView === "friends" ? (
-          <Friends />
+          <Friends
+            onOpenProfile={handleOpenUserProfile}
+            onSelectChat={handleSelectChat}
+          />
+        ) : activeView === "profile" ? (
+          <Profile onBack={handleProfileBack} />
+        ) : activeView === "public-profile" ? (
+          <PublicProfile
+            userId={profileUserId}
+            onBack={handleProfileBack}
+            onMessage={handleMessageFromProfile}
+          />
         ) : (
-          <ChatArea selectedChat={selectedChat} />
+          <ChatArea
+            selectedChat={selectedChat}
+            onOpenProfile={handleOpenUserProfile}
+            onOpenOwnProfile={handleOpenProfile}
+          />
         )}
       </main>
     </div>

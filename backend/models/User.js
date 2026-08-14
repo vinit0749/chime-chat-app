@@ -9,6 +9,31 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    displayName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: "",
+    },
+
+    // Cloudinary profile picture URL
+    profilePicture: {
+      type: String,
+      default: "",
+    },
+
+    // Cloudinary public ID used to replace/delete the image later
+    profilePicturePublicId: {
+      type: String,
+      default: "",
+    },
+
     email: {
       type: String,
       required: true,
@@ -20,6 +45,27 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: true,
+    },
+
+    /*
+      User's manually selected presence status.
+
+      online:
+      User wants to appear online.
+      They will only actually appear online to others
+      while they have an active Socket.IO connection.
+
+      away:
+      User wants to appear away while connected.
+
+      invisible:
+      User appears offline to everyone else even
+      while they are connected.
+    */
+    status: {
+      type: String,
+      enum: ["online", "away", "invisible"],
+      default: "online",
     },
 
     isDeleted: {

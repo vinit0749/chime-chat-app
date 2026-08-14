@@ -7,6 +7,7 @@ import ChimeLayout from "./layouts/ChimeLayout";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
+import { PresenceProvider } from "./context/PresenceContext";
 
 function App() {
   return (
@@ -21,7 +22,13 @@ function App() {
         </Route>
 
         {/* Routes for logged-in users */}
-        <Route element={<ProtectedRoute />}>
+        <Route
+          element={
+            <PresenceProvider>
+              <ProtectedRoute />
+            </PresenceProvider>
+          }
+        >
           <Route path="/app" element={<ChimeLayout />} />
         </Route>
       </Routes>

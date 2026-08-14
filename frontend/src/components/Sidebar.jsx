@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Search, UserPlus, Check, Clock, LogOut, Users } from "lucide-react";
+import { io } from "socket.io-client";
+import {
+  X,
+  Search,
+  UserPlus,
+  Check,
+  Clock,
+  LogOut,
+  Users,
+  MessageCircle,
+} from "lucide-react";
 import { authFetch } from "../utils/authFetch";
 import ConfirmModal from "./ConfirmModal";
 
@@ -8,17 +18,25 @@ function Sidebar({
   onClose,
   onSelectChat,
   onOpenFriendRequests,
+  onOpenProfile,
+  onOpenUserProfile,
   activeView,
 }) {
-  const user = JSON.parse(localStorage.getItem("user"));
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user")) || null;
+    } catch {
+      return null;
+    }
+  });
 
   const [friends, setFriends] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [presence, setPresence] = useState({});
 
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-
   const [isSearching, setIsSearching] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(true);
 
@@ -32,16 +50,37 @@ function Sidebar({
 
   const searchRef = useRef(null);
 
-  /*
-    Fetch friends
-  */
+  const fetchCurrentUser = async () => {
+    try {
+      const response = await authFetch("http://localhost:5000/api/users/me");
+
+      if (response.status === 401) return;
+
+      const data = await response.json();
+
+      if (response.ok && data.user) {
+        setUser(data.user);
+
+        const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            ...storedUser,
+            ...data.user,
+          }),
+        );
+      }
+    } catch (error) {
+      console.error("Failed to load current user:", error);
+    }
+  };
+
   const fetchFriends = async () => {
     try {
       const response = await authFetch("http://localhost:5000/api/friends");
 
-      if (response.status === 401) {
-        return;
-      }
+      if (response.status === 401) return;
 
       const data = await response.json();
 
@@ -53,23 +92,13 @@ function Sidebar({
     }
   };
 
-  /*
-    Fetch existing DM conversations.
-
-    Conversations are intentionally separate from friends.
-
-    A conversation remains visible even after
-    the friendship is removed.
-  */
   const fetchConversations = async () => {
     try {
       const response = await authFetch(
         "http://localhost:5000/api/messages/dms",
       );
 
-      if (response.status === 401) {
-        return;
-      }
+      if (response.status === 401) return;
 
       const data = await response.json();
 
@@ -83,18 +112,13 @@ function Sidebar({
     }
   };
 
-  /*
-    Fetch friend requests
-  */
   const fetchRequests = async () => {
     try {
       const response = await authFetch(
         "http://localhost:5000/api/friends/requests",
       );
 
-      if (response.status === 401) {
-        return;
-      }
+      if (response.status === 401) return;
 
       const data = await response.json();
 
@@ -106,15 +130,14 @@ function Sidebar({
     }
   };
 
-  /*
-    Initial load + lightweight polling
-  */
   useEffect(() => {
+    fetchCurrentUser();
     fetchFriends();
     fetchConversations();
     fetchRequests();
 
     const interval = setInterval(() => {
+      fetchCurrentUser();
       fetchFriends();
       fetchConversations();
       fetchRequests();
@@ -123,9 +146,49 @@ function Sidebar({
     return () => clearInterval(interval);
   }, []);
 
-  /*
-    Close search when clicking outside or pressing Escape
-  */
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token) return;
+
+    const socket = io("http://localhost:5000", {
+      auth: {
+        token,
+      },
+    });
+
+    socket.on("presence_update", (data) => {
+      if (!data?.userId) return;
+
+      setPresence((currentPresence) => ({
+        ...currentPresence,
+        [data.userId]: data.status,
+      }));
+    });
+
+    socket.on("presence_initial", (users) => {
+      if (!Array.isArray(users)) return;
+
+      const initialPresence = {};
+
+      users.forEach((item) => {
+        if (item?.userId) {
+          initialPresence[item.userId] = item.status;
+        }
+      });
+
+      setPresence(initialPresence);
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("Presence socket connection failed:", error.message);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
@@ -150,9 +213,6 @@ function Sidebar({
     };
   }, []);
 
-  /*
-    Search users
-  */
   useEffect(() => {
     const searchUsers = async () => {
       if (!search.trim()) {
@@ -170,9 +230,7 @@ function Sidebar({
           )}`,
         );
 
-        if (response.status === 401) {
-          return;
-        }
+        if (response.status === 401) return;
 
         const data = await response.json();
 
@@ -191,9 +249,6 @@ function Sidebar({
     return () => clearTimeout(timeout);
   }, [search]);
 
-  /*
-    Open confirmation modal for sending a friend request.
-  */
   const openSendRequestModal = (person) => {
     setModal({
       isOpen: true,
@@ -202,20 +257,6 @@ function Sidebar({
     });
   };
 
-  /*
-    Open confirmation modal for removing a friend.
-  */
-  const openUnfriendModal = (friend) => {
-    setModal({
-      isOpen: true,
-      type: "unfriend",
-      user: friend,
-    });
-  };
-
-  /*
-    Open confirmation modal for logout.
-  */
   const handleLogout = () => {
     setModal({
       isOpen: true,
@@ -224,13 +265,8 @@ function Sidebar({
     });
   };
 
-  /*
-    Close confirmation modal.
-  */
   const closeModal = () => {
-    if (isModalLoading) {
-      return;
-    }
+    if (isModalLoading) return;
 
     setModal({
       isOpen: false,
@@ -239,13 +275,8 @@ function Sidebar({
     });
   };
 
-  /*
-    Confirm modal action.
-  */
   const handleConfirmModal = async () => {
-    if (modal.type !== "logout" && !modal.user) {
-      return;
-    }
+    if (modal.type !== "logout" && !modal.user) return;
 
     setIsModalLoading(true);
 
@@ -279,24 +310,6 @@ function Sidebar({
         await fetchRequests();
       }
 
-      if (modal.type === "unfriend") {
-        const response = await authFetch(
-          `http://localhost:5000/api/friends/${modal.user._id}`,
-          {
-            method: "DELETE",
-          },
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          console.error(data.message);
-          return;
-        }
-
-        await fetchFriends();
-      }
-
       setModal({
         isOpen: false,
         type: null,
@@ -306,32 +319,25 @@ function Sidebar({
       if (modal.type === "sendRequest") {
         console.error("Failed to send friend request:", error);
       }
-
-      if (modal.type === "unfriend") {
-        console.error("Failed to unfriend user:", error);
-      }
     } finally {
       setIsModalLoading(false);
     }
   };
 
-  /*
-    Check whether a conversation user is currently a friend.
-  */
   const isFriend = (userId) => {
-    return friends.some((friend) => friend._id === userId);
+    return friends.some((friend) => String(friend._id) === String(userId));
   };
 
-  /*
-    Find an existing DM conversation for a user.
-  */
   const findConversation = (userId) => {
-    return conversations.find((conversation) => conversation._id === userId);
+    return conversations.find(
+      (conversation) => String(conversation._id) === String(userId),
+    );
   };
 
-  /*
-    Select DM conversation.
-  */
+  const getUserStatus = (userId) => {
+    return presence[userId] || "offline";
+  };
+
   const handleSelectConversation = (conversation) => {
     onSelectChat({
       type: "dm",
@@ -344,9 +350,39 @@ function Sidebar({
     }
   };
 
-  /*
-    Select General.
-  */
+  const handleOpenSearchProfile = (person) => {
+    if (!person?._id || !onOpenUserProfile) return;
+
+    onOpenUserProfile(person._id);
+
+    setSearch("");
+    setSearchResults([]);
+
+    if (mobile && onClose) {
+      onClose();
+    }
+  };
+
+  const handleMessageSearchUser = (person) => {
+    if (!person?._id) return;
+
+    const conversation = findConversation(person._id);
+    const chatUser = conversation || person;
+
+    onSelectChat({
+      type: "dm",
+      user: chatUser,
+      isFriend: isFriend(person._id),
+    });
+
+    setSearch("");
+    setSearchResults([]);
+
+    if (mobile && onClose) {
+      onClose();
+    }
+  };
+
   const handleSelectGeneral = () => {
     onSelectChat({
       type: "room",
@@ -359,9 +395,6 @@ function Sidebar({
     }
   };
 
-  /*
-    Open Friends.
-  */
   const handleOpenFriends = () => {
     onOpenFriendRequests();
 
@@ -370,15 +403,21 @@ function Sidebar({
     }
   };
 
-  /*
-    Search relationship button.
-  */
+  const handleOpenProfile = () => {
+    onOpenProfile();
+
+    if (mobile && onClose) {
+      onClose();
+    }
+  };
+
   const renderRelationshipButton = (person) => {
     if (person.relationshipStatus === "friends") {
       return (
         <button
+          type="button"
           disabled
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary"
           title="Already friends"
         >
           <Check size={16} />
@@ -392,8 +431,9 @@ function Sidebar({
     ) {
       return (
         <button
+          type="button"
           disabled
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary"
           title={
             person.relationshipStatus === "sent"
               ? "Friend request sent"
@@ -407,13 +447,41 @@ function Sidebar({
 
     return (
       <button
-        onClick={() => openSendRequestModal(person)}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-chime-text transition hover:bg-chime-gold"
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          openSendRequestModal(person);
+        }}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-chime-text transition hover:bg-chime-gold"
         title="Add friend"
       >
         <UserPlus size={16} />
       </button>
     );
+  };
+
+  const renderPresenceIndicator = (userId) => {
+    const status = getUserStatus(userId);
+
+    if (status === "online") {
+      return (
+        <span
+          className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-chime-background bg-green-500"
+          title="Online"
+        />
+      );
+    }
+
+    if (status === "away") {
+      return (
+        <span
+          className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-chime-background bg-yellow-400"
+          title="Away"
+        />
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -465,42 +533,64 @@ function Sidebar({
                     No users found
                   </p>
                 ) : (
-                  searchResults.map((person) => {
-                    const conversation = findConversation(person._id);
-
-                    return (
-                      <div
-                        key={person._id}
-                        className="flex items-center gap-3 px-3 py-3 transition hover:bg-chime-selected"
+                  searchResults.map((person) => (
+                    <div
+                      key={person._id}
+                      className="flex items-center gap-2 px-3 py-3 transition hover:bg-chime-selected"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSearchProfile(person)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        title="View profile"
                       >
-                        <button
-                          onClick={() => {
-                            if (!conversation) {
-                              return;
-                            }
+                        <div className="relative h-9 w-9 shrink-0">
+                          {person.profilePicture ? (
+                            <img
+                              src={person.profilePicture}
+                              alt=""
+                              className="h-9 w-9 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-9 w-9 rounded-full bg-chime-gold" />
+                          )}
 
-                            handleSelectConversation(conversation);
-                            setSearch("");
-                            setSearchResults([]);
-                          }}
-                          disabled={!conversation}
-                          className={`flex min-w-0 flex-1 items-center gap-3 text-left ${
-                            conversation ? "cursor-pointer" : "cursor-default"
-                          }`}
-                        >
-                          <div className="h-9 w-9 shrink-0 rounded-full bg-chime-gold" />
+                          {renderPresenceIndicator(person._id)}
+                        </div>
 
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-chime-text">
-                              {person.username}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-chime-text hover:underline">
+                            {person.displayName || `@${person.username}`}
+                          </p>
+
+                          {person.displayName && (
+                            <p className="truncate text-xs text-chime-secondary">
+                              @{person.username}
                             </p>
-                          </div>
-                        </button>
+                          )}
+                        </div>
+                      </button>
 
-                        {renderRelationshipButton(person)}
-                      </div>
-                    );
-                  })
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleMessageSearchUser(person);
+                        }}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-gold hover:text-chime-text"
+                        title={`Message ${
+                          person.displayName || `@${person.username}`
+                        }`}
+                        aria-label={`Message ${
+                          person.displayName || person.username
+                        }`}
+                      >
+                        <MessageCircle size={16} />
+                      </button>
+
+                      {renderRelationshipButton(person)}
+                    </div>
+                  ))
                 )}
               </div>
             )}
@@ -524,27 +614,31 @@ function Sidebar({
               </p>
             ) : (
               <div className="space-y-1">
-                {conversations.map((conversation) => {
-                  const friend = isFriend(conversation._id);
+                {conversations.map((conversation) => (
+                  <button
+                    key={conversation._id}
+                    onClick={() => handleSelectConversation(conversation)}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-chime-text transition hover:bg-chime-selected"
+                  >
+                    <div className="relative h-10 w-10 shrink-0">
+                      {conversation.profilePicture ? (
+                        <img
+                          src={conversation.profilePicture}
+                          alt=""
+                          className="h-10 w-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded-full bg-chime-gold" />
+                      )}
 
-                  return (
-                    <button
-                      key={conversation._id}
-                      onClick={() => handleSelectConversation(conversation)}
-                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-chime-text transition hover:bg-chime-selected"
-                    >
-                      <div className="relative h-8 w-8 shrink-0 rounded-full bg-chime-gold">
-                        {friend && (
-                          <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-chime-background bg-green-500" />
-                        )}
-                      </div>
+                      {renderPresenceIndicator(conversation._id)}
+                    </div>
 
-                      <span className="min-w-0 flex-1 truncate">
-                        {conversation.username}
-                      </span>
-                    </button>
-                  );
-                })}
+                    <span className="min-w-0 flex-1 truncate">
+                      {conversation.displayName || `@${conversation.username}`}
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -570,7 +664,7 @@ function Sidebar({
             <button
               onClick={handleOpenFriends}
               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
-                activeView === "friendRequests"
+                activeView === "friends"
                   ? "bg-chime-selected text-chime-text"
                   : "text-chime-text hover:bg-chime-selected"
               }`}
@@ -578,7 +672,7 @@ function Sidebar({
               <Users
                 size={18}
                 className={
-                  activeView === "friendRequests"
+                  activeView === "friends"
                     ? "text-chime-text"
                     : "text-chime-secondary"
                 }
@@ -597,20 +691,46 @@ function Sidebar({
 
         {/* Profile */}
         <div className="shrink-0 border-t border-stone-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 shrink-0 rounded-full bg-chime-gold" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenProfile}
+              className={`flex min-w-0 flex-1 items-center gap-3 rounded-xl p-2 text-left transition ${
+                activeView === "profile"
+                  ? "bg-chime-selected"
+                  : "hover:bg-chime-selected"
+              }`}
+              title="Open profile"
+            >
+              <div className="relative h-12 w-12 shrink-0">
+                {user?.profilePicture ? (
+                  <img
+                    src={user.profilePicture}
+                    alt=""
+                    className="h-12 w-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="h-12 w-12 rounded-full bg-chime-gold" />
+                )}
 
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-chime-text">
-                {user?.username || "User"}
-              </p>
+                {user?._id && renderPresenceIndicator(user._id)}
+              </div>
 
-              <p className="text-xs text-chime-secondary">Online</p>
-            </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-chime-text">
+                  {user?.displayName || `@${user?.username || "user"}`}
+                </p>
+
+                {user?.displayName && (
+                  <p className="truncate text-xs text-chime-secondary">
+                    @{user?.username || "user"}
+                  </p>
+                )}
+              </div>
+            </button>
 
             <button
               onClick={handleLogout}
-              className="rounded-lg p-2 text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+              className="shrink-0 rounded-lg p-2 text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
               title="Log out"
             >
               <LogOut size={18} />
@@ -623,26 +743,14 @@ function Sidebar({
       <ConfirmModal
         isOpen={modal.isOpen}
         title={
-          modal.type === "sendRequest"
-            ? "Send friend request?"
-            : modal.type === "unfriend"
-              ? "Remove friend?"
-              : "Log out?"
+          modal.type === "sendRequest" ? "Send friend request?" : "Log out?"
         }
         message={
           modal.type === "sendRequest"
             ? `Send a friend request to ${modal.user?.username}?`
-            : modal.type === "unfriend"
-              ? `Are you sure you want to remove ${modal.user?.username} from your friends? Your existing conversation will remain available.`
-              : "Are you sure you want to log out?"
+            : "Are you sure you want to log out?"
         }
-        confirmText={
-          modal.type === "sendRequest"
-            ? "Send Request"
-            : modal.type === "unfriend"
-              ? "Unfriend"
-              : "Log Out"
-        }
+        confirmText={modal.type === "sendRequest" ? "Send Request" : "Log Out"}
         cancelText="Cancel"
         onConfirm={handleConfirmModal}
         onCancel={closeModal}

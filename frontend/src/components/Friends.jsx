@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Check, UserMinus, XCircle, Users } from "lucide-react";
+import { Check, UserMinus, XCircle, Users, MessageCircle } from "lucide-react";
 import { authFetch } from "../utils/authFetch";
 import ConfirmModal from "./ConfirmModal";
 
-function FriendRequests() {
+function FriendRequests({ onOpenProfile, onSelectChat }) {
   const [requests, setRequests] = useState([]);
   const [friends, setFriends] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,6 +42,32 @@ function FriendRequests() {
 
     return () => clearInterval(interval);
   }, []);
+
+  /*
+    Open a user's public profile.
+  */
+  const handleOpenProfile = (userId) => {
+    if (!userId || !onOpenProfile) {
+      return;
+    }
+
+    onOpenProfile(userId);
+  };
+
+  /*
+    Open a DM with a friend.
+  */
+  const handleMessageFriend = (friend) => {
+    if (!friend?._id || !onSelectChat) {
+      return;
+    }
+
+    onSelectChat({
+      type: "dm",
+      user: friend,
+      isFriend: true,
+    });
+  };
 
   /*
     Accept friend request
@@ -210,17 +236,39 @@ function FriendRequests() {
                         }`}
                       >
                         <div className="flex min-w-0 flex-1 items-center gap-3">
-                          <div className="h-10 w-10 shrink-0 rounded-full bg-chime-bright" />
+                          {/* Requester PFP */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProfile(request._id)}
+                            className="h-10 w-10 shrink-0 overflow-hidden rounded-full transition hover:opacity-80"
+                            aria-label={`View ${
+                              request.displayName || request.username
+                            }'s profile`}
+                          >
+                            {request.profilePicture ? (
+                              <img
+                                src={request.profilePicture}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full bg-chime-bright" />
+                            )}
+                          </button>
 
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-chime-text">
-                              {request.username}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProfile(request._id)}
+                            className="min-w-0 text-left"
+                          >
+                            <p className="truncate font-semibold text-chime-text hover:underline">
+                              {request.displayName || request.username}
                             </p>
 
                             <p className="mt-0.5 text-sm text-chime-secondary">
-                              Wants to be your friend
+                              @{request.username}
                             </p>
-                          </div>
+                          </button>
                         </div>
 
                         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
@@ -282,28 +330,67 @@ function FriendRequests() {
                         }`}
                       >
                         <div className="flex min-w-0 flex-1 items-center gap-3">
-                          <div className="relative h-10 w-10 shrink-0 rounded-full bg-chime-gold">
-                            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-chime-background bg-green-500" />
-                          </div>
+                          {/* Friend PFP */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProfile(friend._id)}
+                            className="relative h-10 w-10 shrink-0 rounded-full transition hover:opacity-80"
+                            aria-label={`View ${
+                              friend.displayName || friend.username
+                            }'s profile`}
+                          >
+                            {friend.profilePicture ? (
+                              <img
+                                src={friend.profilePicture}
+                                alt=""
+                                className="h-10 w-10 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-full bg-chime-gold" />
+                            )}
 
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-chime-text">
-                              {friend.username}
+                            {/* Online indicator */}
+                            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-chime-background bg-green-500" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProfile(friend._id)}
+                            className="min-w-0 text-left"
+                          >
+                            <p className="truncate font-semibold text-chime-text hover:underline">
+                              {friend.displayName || friend.username}
                             </p>
 
                             <p className="mt-0.5 text-sm text-chime-secondary">
-                              Friend
+                              @{friend.username}
                             </p>
-                          </div>
+                          </button>
                         </div>
 
-                        <button
-                          onClick={() => handleUnfriendClick(friend)}
-                          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-sm font-semibold text-chime-secondary transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:w-auto"
-                        >
-                          <UserMinus size={16} />
-                          Unfriend
-                        </button>
+                        {/* Friend Actions */}
+                        <div className="flex w-full shrink-0 gap-2 sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleMessageFriend(friend)}
+                            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-sm font-semibold text-chime-secondary transition hover:bg-chime-gold hover:text-chime-text sm:flex-none"
+                            title={`Message ${
+                              friend.displayName || `@${friend.username}`
+                            }`}
+                          >
+                            <MessageCircle size={16} />
+                            Message
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleUnfriendClick(friend)}
+                            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-sm font-semibold text-chime-secondary transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:flex-none"
+                          >
+                            <UserMinus size={16} />
+                            Unfriend
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -338,7 +425,7 @@ function FriendRequests() {
       <ConfirmModal
         isOpen={Boolean(friendToRemove)}
         title={`Unfriend ${friendToRemove?.username || "this user"}?`}
-        message={`Your conversation and message history will remain available, but you won't be able to send new messages unless you become friends again.`}
+        message="Your conversation and message history will remain available, but you won't be able to send new messages unless you become friends again."
         confirmText="Unfriend"
         cancelText="Cancel"
         onConfirm={confirmUnfriend}

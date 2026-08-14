@@ -251,7 +251,7 @@ router.get("/", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).populate(
       "friends",
-      "username email isDeleted",
+      "username displayName email isDeleted profilePicture",
     );
 
     if (!user || user.isDeleted) {
@@ -357,7 +357,7 @@ router.get("/requests", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).populate(
       "friendRequestsReceived",
-      "username email isDeleted",
+      "username displayName email isDeleted profilePicture",
     );
 
     if (!user || user.isDeleted) {

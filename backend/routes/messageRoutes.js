@@ -4,6 +4,8 @@ import {
   getMessages,
   getDirectMessages,
   getDirectConversations,
+  unsendMessage,
+  editMessage,
 } from "../controllers/messageController.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 
@@ -39,5 +41,21 @@ router.get("/dm/:userId", authMiddleware, getDirectMessages);
   allowing a DM to be sent.
 */
 router.post("/", authMiddleware, sendMessage);
+
+/*
+  Edit a message
+
+  Only the original sender can edit
+  their own message.
+*/
+router.patch("/:messageId", authMiddleware, editMessage);
+
+/*
+  Unsend a message
+
+  Only the original sender is allowed
+  to unsend their own message.
+*/
+router.delete("/:messageId", authMiddleware, unsendMessage);
 
 export default router;

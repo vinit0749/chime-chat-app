@@ -3,48 +3,14 @@ import Message from "../models/Message.js";
 import User from "../models/User.js";
 import Friendship from "../models/Friendship.js";
 import Conversation from "../models/Conversation.js";
+import Cluster from "../models/Cluster.js";
+import ClusterMember from "../models/ClusterMember.js";
+import getOrCreateConversation from "../utils/conversation.js";
 
-/*
-  Get or create a DM conversation.
-
-  The two participant IDs are sorted so that:
-  Alice + Bob
-  and
-  Bob + Alice
-
-  always resolve to the same conversation.
-*/
-const getOrCreateConversation = async (userId, otherUserId) => {
-  const participants = [
-    new mongoose.Types.ObjectId(userId),
-    new mongoose.Types.ObjectId(otherUserId),
-  ].sort((a, b) => a.toString().localeCompare(b.toString()));
-
-  let conversation = await Conversation.findOne({
-    participants: {
-      $all: participants,
-    },
-  });
-
-  if (!conversation) {
-    conversation = await Conversation.create({
-      participants,
-    });
-  }
-
-  return conversation;
-};
-
-/*
-  Send message through REST.
-
-  Socket.IO is used by the current chat UI for
-  real-time message sending, but this controller
-  remains available for REST-based sending.
-*/
 export const sendMessage = async (req, res) => {
   try {
-    const { content, room, recipient, replyTo } = req.body;
+    const { content, recipient, cluster, replyTo } = req.body;
+    const userId = req.user.userId;
 
     if (!content || !content.trim()) {
       return res.status(400).json({
@@ -52,10 +18,53 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    /*
-      Public room message
-    */
-    if (!recipient) {
+    const trimmedContent = content.trim();
+
+    if (trimmedContent.length > 2000) {
+      return res.status(400).json({
+        message: "Message content cannot exceed 2000 characters",
+      });
+    }
+
+    if (recipient && cluster) {
+      return res.status(400).json({
+        message: "Message cannot have both a recipient and a cluster",
+      });
+    }
+
+    if (!recipient && !cluster) {
+      return res.status(400).json({
+        message: "Message recipient or cluster is required",
+      });
+    }
+
+    if (cluster) {
+      if (!mongoose.Types.ObjectId.isValid(cluster)) {
+        return res.status(400).json({
+          message: "Invalid cluster ID",
+        });
+      }
+
+      const clusterData = await Cluster.findById(cluster);
+
+      if (!clusterData || clusterData.isDeleted) {
+        return res.status(404).json({
+          message: "Cluster not found",
+        });
+      }
+
+      const membership = await ClusterMember.findOne({
+        cluster,
+        user: userId,
+        status: "active",
+      });
+
+      if (!membership) {
+        return res.status(403).json({
+          message: "You must be an active Cluster member to send messages",
+        });
+      }
+
       let validReplyTo = null;
 
       if (replyTo) {
@@ -65,33 +74,55 @@ export const sendMessage = async (req, res) => {
           });
         }
 
-        const repliedMessage = await Message.findById(replyTo);
+        const repliedMessage = await Message.findOne({
+          _id: replyTo,
+          cluster,
+        });
 
-        if (repliedMessage && repliedMessage.room === (room || "general")) {
+        if (repliedMessage) {
           validReplyTo = repliedMessage._id;
         }
       }
 
       const message = await Message.create({
-        sender: req.user.userId,
-        recipient: null,
-        content: content.trim(),
-        room: room || "general",
+        sender: userId,
         senderUsername: req.user.username || "",
+        recipient: null,
+        cluster,
+        content: trimmedContent,
         replyTo: validReplyTo,
+        status: "delivered",
       });
 
       await message.populate("sender", "username displayName profilePicture");
 
+      await message.populate("cluster", "name description visibility owner");
+
       if (message.replyTo) {
         await message.populate({
           path: "replyTo",
-          select: "content sender senderUsername createdAt room",
+          select: "content sender senderUsername createdAt cluster",
           populate: {
             path: "sender",
             select: "username displayName profilePicture",
           },
         });
+      }
+
+      const emitToUser = req.app.get("emitToUser");
+
+      if (emitToUser) {
+        const members = await ClusterMember.find({
+          cluster,
+          status: "active",
+        }).select("user");
+
+        for (const member of members) {
+          emitToUser(member.user.toString(), "new_cluster_message", {
+            clusterId: String(cluster),
+            message,
+          });
+        }
       }
 
       return res.status(201).json({
@@ -100,16 +131,13 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    /*
-      DM validation
-    */
     if (!mongoose.Types.ObjectId.isValid(recipient)) {
       return res.status(400).json({
         message: "Invalid recipient ID",
       });
     }
 
-    if (recipient === req.user.userId) {
+    if (String(recipient) === String(userId)) {
       return res.status(400).json({
         message: "You cannot message yourself",
       });
@@ -123,20 +151,16 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    /*
-      Privacy rule:
-      Only friends can send DMs.
-    */
     const friendship = await Friendship.findOne({
       status: "accepted",
       $or: [
         {
-          requester: req.user.userId,
+          requester: userId,
           recipient,
         },
         {
           requester: recipient,
-          recipient: req.user.userId,
+          recipient: userId,
         },
       ],
     });
@@ -147,20 +171,8 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    /*
-      Make sure the DM conversation exists.
+    const conversation = await getOrCreateConversation(userId, recipient);
 
-      The conversation remains even if every message
-      is later unsent.
-    */
-    const conversation = await getOrCreateConversation(
-      req.user.userId,
-      recipient,
-    );
-
-    /*
-      Validate reply target if provided.
-    */
     let validReplyTo = null;
 
     if (replyTo) {
@@ -170,27 +182,32 @@ export const sendMessage = async (req, res) => {
         });
       }
 
-      const repliedMessage = await Message.findById(replyTo);
+      const repliedMessage = await Message.findOne({
+        _id: replyTo,
+        $or: [
+          {
+            sender: userId,
+            recipient,
+          },
+          {
+            sender: recipient,
+            recipient: userId,
+          },
+        ],
+        cluster: null,
+      });
 
       if (repliedMessage) {
-        const belongsToConversation =
-          (String(repliedMessage.sender) === String(req.user.userId) &&
-            String(repliedMessage.recipient) === String(recipient)) ||
-          (String(repliedMessage.sender) === String(recipient) &&
-            String(repliedMessage.recipient) === String(req.user.userId));
-
-        if (belongsToConversation) {
-          validReplyTo = repliedMessage._id;
-        }
+        validReplyTo = repliedMessage._id;
       }
     }
 
     const message = await Message.create({
-      sender: req.user.userId,
-      recipient,
-      content: content.trim(),
-      room: null,
+      sender: userId,
       senderUsername: req.user.username || "",
+      recipient,
+      cluster: null,
+      content: trimmedContent,
       replyTo: validReplyTo,
     });
 
@@ -209,67 +226,82 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    /*
-      Keep conversation metadata synchronized.
-    */
     conversation.lastMessage = message._id;
     conversation.lastMessageAt = message.createdAt;
 
     await conversation.save();
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Message sent successfully",
       data: message,
     });
   } catch (error) {
     console.error("Message error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to send message",
     });
   }
 };
 
-/*
-  Get public room messages.
-*/
-export const getMessages = async (req, res) => {
+export const getClusterMessages = async (req, res) => {
   try {
+    const userId = req.user.userId;
+    const { clusterId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(clusterId)) {
+      return res.status(400).json({
+        message: "Invalid cluster ID",
+      });
+    }
+
+    const cluster = await Cluster.findById(clusterId);
+
+    if (!cluster || cluster.isDeleted) {
+      return res.status(404).json({
+        message: "Cluster not found",
+      });
+    }
+
+    const membership = await ClusterMember.findOne({
+      cluster: clusterId,
+      user: userId,
+      status: "active",
+    });
+
+    if (!membership) {
+      return res.status(403).json({
+        message: "You must be an active Cluster member to view messages",
+      });
+    }
+
     const messages = await Message.find({
-      room: "general",
-      recipient: null,
+      cluster: clusterId,
     })
       .sort({ createdAt: 1 })
       .populate("sender", "username displayName profilePicture")
+      .populate("cluster", "name description visibility owner")
       .populate({
         path: "replyTo",
-        select: "content sender senderUsername createdAt room",
+        select: "content sender senderUsername createdAt cluster",
         populate: {
           path: "sender",
           select: "username displayName profilePicture",
         },
       });
 
-    res.status(200).json({
+    return res.status(200).json({
       messages,
     });
   } catch (error) {
-    console.error("Get messages error:", error);
+    console.error("Get cluster messages error:", error);
 
-    res.status(500).json({
-      message: "Failed to fetch messages",
+    return res.status(500).json({
+      message: "Failed to fetch cluster messages",
     });
   }
 };
 
-/*
-  Get DM conversation with another user.
-
-  Friendship is NOT required.
-
-  Existing conversation history remains accessible
-  after unfriending.
-*/
 export const getDirectMessages = async (req, res) => {
   try {
     const currentUserId = req.user.userId;
@@ -281,7 +313,7 @@ export const getDirectMessages = async (req, res) => {
       });
     }
 
-    if (currentUserId === otherUserId) {
+    if (String(currentUserId) === String(otherUserId)) {
       return res.status(400).json({
         message: "Invalid conversation",
       });
@@ -295,12 +327,8 @@ export const getDirectMessages = async (req, res) => {
       });
     }
 
-    /*
-      Friendship is only required for sending
-      new messages.
-    */
     const messages = await Message.find({
-      room: null,
+      cluster: null,
       $or: [
         {
           sender: currentUserId,
@@ -324,26 +352,18 @@ export const getDirectMessages = async (req, res) => {
         },
       });
 
-    res.status(200).json({
+    return res.status(200).json({
       messages,
     });
   } catch (error) {
     console.error("Get direct messages error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to fetch direct messages",
     });
   }
 };
 
-/*
-  Get users with existing DM conversations.
-
-  This reads from Conversation instead of Message.
-
-  Therefore, unsending the last message does NOT
-  remove the conversation from the sidebar.
-*/
 export const getDirectConversations = async (req, res) => {
   try {
     const currentUserId = req.user.userId;
@@ -377,24 +397,18 @@ export const getDirectConversations = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       conversations: result,
     });
   } catch (error) {
     console.error("Get direct conversations error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to fetch direct conversations",
     });
   }
 };
 
-/*
-  Edit a message.
-
-  Only the original sender can edit
-  their own message.
-*/
 export const editMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -413,6 +427,14 @@ export const editMessage = async (req, res) => {
       });
     }
 
+    const trimmedContent = content.trim();
+
+    if (trimmedContent.length > 2000) {
+      return res.status(400).json({
+        message: "Message content cannot exceed 2000 characters",
+      });
+    }
+
     const message = await Message.findById(messageId);
 
     if (!message) {
@@ -421,74 +443,55 @@ export const editMessage = async (req, res) => {
       });
     }
 
-    /*
-      Only the original sender can edit
-      their own messages.
-    */
     if (String(message.sender) !== String(userId)) {
       return res.status(403).json({
         message: "You can only edit your own messages",
       });
     }
 
-    message.content = content.trim();
+    message.content = trimmedContent;
     message.isEdited = true;
 
     await message.save();
-
-    const emitToUser = req.app.get("emitToUser");
-    const io = req.app.get("io");
 
     const messageData = {
       messageId: message._id.toString(),
       content: message.content,
       isEdited: message.isEdited,
+      updatedAt: message.updatedAt,
     };
 
-    /*
-      DM message
-    */
+    const emitToUser = req.app.get("emitToUser");
+
     if (message.recipient && emitToUser) {
       emitToUser(message.sender.toString(), "message_edited", messageData);
-
       emitToUser(message.recipient.toString(), "message_edited", messageData);
     }
 
-    /*
-      Public room message.
-    */
-    if (message.room && io) {
-      io.emit("message_edited", messageData);
+    if (message.cluster && emitToUser) {
+      const members = await ClusterMember.find({
+        cluster: message.cluster,
+        status: "active",
+      }).select("user");
+
+      for (const member of members) {
+        emitToUser(member.user.toString(), "message_edited", messageData);
+      }
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Message edited successfully",
       data: message,
     });
   } catch (error) {
     console.error("Edit message error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to edit message",
     });
   }
 };
 
-/*
-  Unsend a message.
-
-  Only the original sender can unsend
-  their own message.
-
-  IMPORTANT:
-
-  The message is deleted first, but all information
-  required for the Socket.IO event is saved before
-  deletion.
-
-  server.js tracks sockets by user ID through
-  emitToUser(), so we use that same mechanism here.
-*/
 export const unsendMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -508,42 +511,23 @@ export const unsendMessage = async (req, res) => {
       });
     }
 
-    /*
-      Only the original sender can unsend
-      their own message.
-    */
     if (String(message.sender) !== String(userId)) {
       return res.status(403).json({
         message: "You can only unsend your own messages",
       });
     }
 
-    /*
-      Save all information needed for the
-      real-time event BEFORE deleting the message.
-    */
     const messageData = {
       messageId: message._id.toString(),
       sender: message.sender.toString(),
       recipient: message.recipient ? message.recipient.toString() : null,
-      room: message.room || null,
+      cluster: message.cluster ? message.cluster.toString() : null,
     };
 
-    /*
-      Delete the message from MongoDB.
-    */
     await Message.findByIdAndDelete(messageId);
 
-    /*
-      Get the Socket.IO user-targeting helper
-      registered by server.js.
-    */
     const emitToUser = req.app.get("emitToUser");
-    const io = req.app.get("io");
 
-    /*
-      DM message
-    */
     if (messageData.recipient && emitToUser) {
       emitToUser(messageData.recipient, "message_unsent", {
         messageId: messageData.messageId,
@@ -554,25 +538,27 @@ export const unsendMessage = async (req, res) => {
       });
     }
 
-    /*
-      Public room message.
+    if (messageData.cluster && emitToUser) {
+      const members = await ClusterMember.find({
+        cluster: messageData.cluster,
+        status: "active",
+      }).select("user");
 
-      Notify everyone connected to Chime.
-    */
-    if (messageData.room && io) {
-      io.emit("message_unsent", {
-        messageId: messageData.messageId,
-      });
+      for (const member of members) {
+        emitToUser(member.user.toString(), "message_unsent", {
+          messageId: messageData.messageId,
+        });
+      }
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Message unsent successfully",
       messageId: messageData.messageId,
     });
   } catch (error) {
     console.error("Unsend message error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to unsend message",
     });
   }

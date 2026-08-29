@@ -6,6 +6,7 @@ import ChatArea from "../components/ChatArea";
 import Friends from "../components/Friends";
 import Profile from "../components/Profile";
 import PublicProfile from "../components/PublicProfile";
+import DiscoverClusters from "../components/DiscoverClusters";
 import { authFetch } from "../utils/authFetch";
 
 function ChimeLayout() {
@@ -14,9 +15,6 @@ function ChimeLayout() {
   const [activeView, setActiveView] = useState("chat");
   const [profileUserId, setProfileUserId] = useState(null);
 
-  /*
-    Keep the selected DM's friendship status up to date.
-  */
   useEffect(() => {
     if (!selectedChat || selectedChat.type !== "dm") {
       return;
@@ -67,9 +65,6 @@ function ChimeLayout() {
     return () => clearInterval(interval);
   }, [selectedChat?.type, selectedChat?.user?._id]);
 
-  /*
-    Select a chat.
-  */
   const handleSelectChat = (chat) => {
     setSelectedChat(chat);
     setProfileUserId(null);
@@ -77,9 +72,27 @@ function ChimeLayout() {
     setIsSidebarOpen(false);
   };
 
-  /*
-    Open Friends.
-  */
+  const handleSelectCluster = (cluster) => {
+    if (!cluster) {
+      return;
+    }
+
+    setSelectedChat({
+      type: "cluster",
+      cluster,
+    });
+    setProfileUserId(null);
+    setActiveView("chat");
+    setIsSidebarOpen(false);
+  };
+
+  const handleDiscoverClusters = () => {
+    setSelectedChat(null);
+    setProfileUserId(null);
+    setActiveView("discover");
+    setIsSidebarOpen(false);
+  };
+
   const handleOpenFriends = () => {
     setSelectedChat(null);
     setProfileUserId(null);
@@ -87,9 +100,6 @@ function ChimeLayout() {
     setIsSidebarOpen(false);
   };
 
-  /*
-    Open your own profile/settings.
-  */
   const handleOpenProfile = () => {
     setSelectedChat(null);
     setProfileUserId(null);
@@ -97,9 +107,6 @@ function ChimeLayout() {
     setIsSidebarOpen(false);
   };
 
-  /*
-    Open another user's public profile.
-  */
   const handleOpenUserProfile = (userId) => {
     const actualUserId = typeof userId === "object" ? userId?._id : userId;
 
@@ -114,9 +121,6 @@ function ChimeLayout() {
     setIsSidebarOpen(false);
   };
 
-  /*
-    Open a DM from a public profile.
-  */
   const handleMessageFromProfile = (user) => {
     if (!user?._id) {
       return;
@@ -133,9 +137,6 @@ function ChimeLayout() {
     setIsSidebarOpen(false);
   };
 
-  /*
-    Go back from a profile.
-  */
   const handleProfileBack = () => {
     setProfileUserId(null);
     setActiveView("chat");
@@ -143,30 +144,30 @@ function ChimeLayout() {
 
   return (
     <div className="flex h-screen min-w-0 overflow-hidden bg-chime-background">
-      {/* Desktop Sidebar */}
       <Sidebar
         onSelectChat={handleSelectChat}
+        onSelectCluster={handleSelectCluster}
+        onOpenDiscover={handleDiscoverClusters}
         onOpenFriendRequests={handleOpenFriends}
         onOpenProfile={handleOpenProfile}
         onOpenUserProfile={handleOpenUserProfile}
         activeView={activeView}
       />
 
-      {/* Mobile Sidebar */}
       {isSidebarOpen && (
         <>
-          {/* Overlay */}
           <div
             className="fixed inset-0 z-40 bg-black/30 md:hidden"
             onClick={() => setIsSidebarOpen(false)}
           />
 
-          {/* Drawer */}
           <div className="fixed inset-y-0 left-0 z-50 md:hidden">
             <Sidebar
               mobile
               onClose={() => setIsSidebarOpen(false)}
               onSelectChat={handleSelectChat}
+              onSelectCluster={handleSelectCluster}
+              onOpenDiscover={handleDiscoverClusters}
               onOpenFriendRequests={handleOpenFriends}
               onOpenProfile={handleOpenProfile}
               onOpenUserProfile={handleOpenUserProfile}
@@ -176,9 +177,7 @@ function ChimeLayout() {
         </>
       )}
 
-      {/* Main Content */}
       <main className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile Header */}
         <header className="flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-4 md:hidden">
           <button
             onClick={() => setIsSidebarOpen(true)}
@@ -191,8 +190,9 @@ function ChimeLayout() {
           <h1 className="ml-3 font-bold text-chime-text">Chime 🔔</h1>
         </header>
 
-        {/* Main View */}
-        {activeView === "friends" ? (
+        {activeView === "discover" ? (
+          <DiscoverClusters onSelectCluster={handleSelectCluster} />
+        ) : activeView === "friends" ? (
           <Friends
             onOpenProfile={handleOpenUserProfile}
             onSelectChat={handleSelectChat}

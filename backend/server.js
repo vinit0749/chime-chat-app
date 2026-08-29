@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
@@ -10,11 +11,15 @@ import authRoutes from "./routes/authRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import friendRoutes from "./routes/friendRoutes.js";
+import clusterRoutes from "./routes/clusterRoutes.js";
 
 import Message from "./models/Message.js";
 import User from "./models/User.js";
 import Friendship from "./models/Friendship.js";
-import Conversation from "./models/Conversation.js";
+import Cluster from "./models/Cluster.js";
+import ClusterMember from "./models/ClusterMember.js";
+
+import getOrCreateConversation from "./utils/conversation.js";
 
 dotenv.config();
 
@@ -39,6 +44,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/friends", friendRoutes);
+app.use("/api/clusters", clusterRoutes);
 
 app.get("/", (req, res) => {
   res.send("Chime backend is running!");
@@ -51,6 +57,16 @@ app.get("/", (req, res) => {
 */
 
 const onlineUsers = new Map();
+
+/*
+  ============================================================
+  CLUSTER SOCKET ROOM HELPER
+  ============================================================
+*/
+
+const getClusterRoom = (clusterId) => {
+  return `cluster:${String(clusterId)}`;
+};
 
 /*
   ============================================================
@@ -120,46 +136,6 @@ app.set("emitToUser", emitToUser);
 
 /*
   ============================================================
-  CONVERSATIONS
-  ============================================================
-*/
-
-const getOrCreateConversation = async (userId, recipientId) => {
-  const participants = [String(userId), String(recipientId)].sort();
-
-  let conversation = await Conversation.findOne({
-    participants: {
-      $all: participants,
-    },
-  });
-
-  if (conversation) {
-    return conversation;
-  }
-
-  try {
-    conversation = await Conversation.create({
-      participants,
-    });
-
-    return conversation;
-  } catch (error) {
-    conversation = await Conversation.findOne({
-      participants: {
-        $all: participants,
-      },
-    });
-
-    if (conversation) {
-      return conversation;
-    }
-
-    throw error;
-  }
-};
-
-/*
-  ============================================================
   SOCKET AUTHENTICATION
   ============================================================
 */
@@ -195,7 +171,9 @@ io.on("connection", async (socket) => {
   console.log("User ID:", userId);
 
   /*
-    Register socket.
+    ==========================================================
+    REGISTER SOCKET
+    ==========================================================
   */
 
   if (!onlineUsers.has(userId)) {
@@ -204,15 +182,20 @@ io.on("connection", async (socket) => {
 
   onlineUsers.get(userId).add(socket.id);
 
+  socket.clusterRooms = new Set();
+
   /*
-    Broadcast this user's presence.
+    ==========================================================
+    BROADCAST THIS USER'S PRESENCE
+    ==========================================================
   */
 
   await broadcastPresence(userId);
 
   /*
-    Tell the newly connected user about everyone
-    who is already online.
+    ==========================================================
+    SEND EXISTING ONLINE USERS
+    ==========================================================
   */
 
   for (const [onlineUserId, sockets] of onlineUsers.entries()) {
@@ -286,13 +269,13 @@ io.on("connection", async (socket) => {
 
   /*
     ==========================================================
-    MARK MESSAGES READ
+    MARK DIRECT MESSAGES READ
     ==========================================================
   */
 
   socket.on("mark_messages_read", async (data) => {
     try {
-      const { senderId } = data;
+      const { senderId } = data || {};
 
       if (!senderId) {
         return;
@@ -342,202 +325,372 @@ io.on("connection", async (socket) => {
 
   /*
     ==========================================================
-    SEND MESSAGE
+    DIRECT MESSAGE TYPING
     ==========================================================
-
-    Supports:
-    - Normal messages
-    - Reply messages
   */
 
-  socket.on("send_message", async (data) => {
+  socket.on("typing_start", async (data) => {
     try {
-      const { content, recipient, room, replyTo } = data;
+      const { recipient } = data || {};
+
+      if (!recipient) {
+        return;
+      }
+
+      const recipientId = String(recipient);
+
+      if (recipientId === userId) {
+        return;
+      }
+
+      const recipientUser =
+        await User.findById(recipientId).select("_id isDeleted");
+
+      if (!recipientUser || recipientUser.isDeleted) {
+        return;
+      }
+
+      const friendship = await Friendship.findOne({
+        status: "accepted",
+        $or: [
+          {
+            requester: userId,
+            recipient: recipientId,
+          },
+          {
+            requester: recipientId,
+            recipient: userId,
+          },
+        ],
+      });
+
+      if (!friendship) {
+        return;
+      }
+
+      emitToUser(recipientId, "typing_start", {
+        userId,
+      });
+    } catch (error) {
+      console.error("Typing start error:", error);
+    }
+  });
+
+  socket.on("typing_stop", async (data) => {
+    try {
+      const { recipient } = data || {};
+
+      if (!recipient) {
+        return;
+      }
+
+      const recipientId = String(recipient);
+
+      if (recipientId === userId) {
+        return;
+      }
+
+      const friendship = await Friendship.findOne({
+        status: "accepted",
+        $or: [
+          {
+            requester: userId,
+            recipient: recipientId,
+          },
+          {
+            requester: recipientId,
+            recipient: userId,
+          },
+        ],
+      });
+
+      if (!friendship) {
+        return;
+      }
+
+      emitToUser(recipientId, "typing_stop", {
+        userId,
+      });
+    } catch (error) {
+      console.error("Typing stop error:", error);
+    }
+  });
+
+  /*
+    ==========================================================
+    JOIN CLUSTER
+    ==========================================================
+  */
+
+  socket.on("join_cluster", async (data) => {
+    try {
+      const { clusterId } = data || {};
+
+      if (!clusterId) {
+        return socket.emit("cluster_error", {
+          message: "Cluster ID is required",
+        });
+      }
+
+      if (!/^[a-fA-F0-9]{24}$/.test(String(clusterId))) {
+        return socket.emit("cluster_error", {
+          message: "Invalid Cluster ID",
+        });
+      }
+
+      const cluster = await Cluster.findOne({
+        _id: clusterId,
+        isDeleted: false,
+      });
+
+      if (!cluster) {
+        return socket.emit("cluster_error", {
+          message: "Cluster not found",
+        });
+      }
+
+      const membership = await ClusterMember.findOne({
+        cluster: clusterId,
+        user: userId,
+        status: "active",
+      });
+
+      if (!membership) {
+        return socket.emit("cluster_error", {
+          message: "You are not a member of this Cluster",
+        });
+      }
+
+      const clusterIdString = String(clusterId);
+      const clusterRoom = getClusterRoom(clusterIdString);
+
+      if (socket.clusterRooms.has(clusterIdString)) {
+        return socket.emit("cluster_joined", {
+          clusterId: clusterIdString,
+        });
+      }
+
+      await socket.join(clusterRoom);
+
+      socket.clusterRooms.add(clusterIdString);
+
+      console.log(`User ${userId} joined Cluster ${clusterIdString}`);
+
+      socket.emit("cluster_joined", {
+        clusterId: clusterIdString,
+      });
+
+      socket.to(clusterRoom).emit("cluster_member_online", {
+        clusterId: clusterIdString,
+        userId,
+      });
+    } catch (error) {
+      console.error("Join Cluster socket error:", error);
+
+      socket.emit("cluster_error", {
+        message: "Failed to join Cluster",
+      });
+    }
+  });
+
+  /*
+    ==========================================================
+    LEAVE CLUSTER
+    ==========================================================
+  */
+
+  socket.on("leave_cluster", async (data) => {
+    try {
+      const { clusterId } = data || {};
+
+      if (!clusterId) {
+        return;
+      }
+
+      const clusterIdString = String(clusterId);
+      const clusterRoom = getClusterRoom(clusterIdString);
+
+      if (!socket.clusterRooms.has(clusterIdString)) {
+        return;
+      }
+
+      await socket.leave(clusterRoom);
+
+      socket.clusterRooms.delete(clusterIdString);
+
+      console.log(`User ${userId} left Cluster ${clusterIdString}`);
+
+      socket.to(clusterRoom).emit("cluster_member_offline", {
+        clusterId: clusterIdString,
+        userId,
+      });
+
+      socket.emit("cluster_left", {
+        clusterId: clusterIdString,
+      });
+    } catch (error) {
+      console.error("Leave Cluster socket error:", error);
+    }
+  });
+
+  /*
+    ==========================================================
+    CLUSTER TYPING START
+    ==========================================================
+  */
+
+  socket.on("cluster_typing_start", async (data) => {
+    try {
+      const { clusterId } = data || {};
+
+      if (!clusterId) {
+        return;
+      }
+
+      const clusterIdString = String(clusterId);
+
+      const membership = await ClusterMember.findOne({
+        cluster: clusterIdString,
+        user: userId,
+        status: "active",
+      });
+
+      if (!membership) {
+        return;
+      }
+
+      if (!socket.clusterRooms.has(clusterIdString)) {
+        return;
+      }
+
+      const clusterRoom = getClusterRoom(clusterIdString);
+
+      socket.to(clusterRoom).emit("cluster_typing_start", {
+        clusterId: clusterIdString,
+        userId,
+      });
+    } catch (error) {
+      console.error("Cluster typing start error:", error);
+    }
+  });
+
+  /*
+    ==========================================================
+    CLUSTER TYPING STOP
+    ==========================================================
+  */
+
+  socket.on("cluster_typing_stop", async (data) => {
+    try {
+      const { clusterId } = data || {};
+
+      if (!clusterId) {
+        return;
+      }
+
+      const clusterIdString = String(clusterId);
+
+      const membership = await ClusterMember.findOne({
+        cluster: clusterIdString,
+        user: userId,
+        status: "active",
+      });
+
+      if (!membership) {
+        return;
+      }
+
+      if (!socket.clusterRooms.has(clusterIdString)) {
+        return;
+      }
+
+      const clusterRoom = getClusterRoom(clusterIdString);
+
+      socket.to(clusterRoom).emit("cluster_typing_stop", {
+        clusterId: clusterIdString,
+        userId,
+      });
+    } catch (error) {
+      console.error("Cluster typing stop error:", error);
+    }
+  });
+
+  /*
+    ==========================================================
+    SEND CLUSTER MESSAGE
+    ==========================================================
+  */
+
+  socket.on("send_cluster_message", async (data) => {
+    try {
+      const { clusterId, content, replyTo } = data || {};
+
+      if (!clusterId) {
+        return socket.emit("cluster_error", {
+          message: "Cluster ID is required",
+        });
+      }
 
       if (!content || !content.trim()) {
         return;
       }
 
+      if (!/^[a-fA-F0-9]{24}$/.test(String(clusterId))) {
+        return socket.emit("cluster_error", {
+          message: "Invalid Cluster ID",
+        });
+      }
+
+      const clusterIdString = String(clusterId);
+
       const sender = await User.findById(userId);
 
       if (!sender || sender.isDeleted) {
-        console.error("Message sender no longer exists");
-        return;
+        return socket.emit("cluster_error", {
+          message: "User no longer exists",
+        });
       }
 
-      /*
-        ======================================================
-        DIRECT MESSAGE
-        ======================================================
-      */
+      const cluster = await Cluster.findOne({
+        _id: clusterIdString,
+        isDeleted: false,
+      });
 
-      if (recipient) {
-        const recipientId = String(recipient);
-
-        const recipientUser = await User.findById(recipientId);
-
-        if (!recipientUser || recipientUser.isDeleted) {
-          console.error("Message recipient no longer exists");
-          return;
-        }
-
-        if (recipientId === userId) {
-          console.error("User cannot message themselves");
-          return;
-        }
-
-        /*
-          Only friends can send DMs.
-        */
-
-        const friendship = await Friendship.findOne({
-          status: "accepted",
-          $or: [
-            {
-              requester: userId,
-              recipient: recipientId,
-            },
-            {
-              requester: recipientId,
-              recipient: userId,
-            },
-          ],
+      if (!cluster) {
+        return socket.emit("cluster_error", {
+          message: "Cluster not found",
         });
-
-        if (!friendship) {
-          console.error("Users are not friends");
-          return;
-        }
-
-        /*
-          Get/create persistent conversation.
-        */
-
-        const conversation = await getOrCreateConversation(userId, recipientId);
-
-        /*
-          Validate reply target if provided.
-        */
-
-        let validReplyTo = null;
-
-        if (replyTo) {
-          const repliedMessage = await Message.findById(replyTo);
-
-          if (repliedMessage) {
-            const belongsToConversation =
-              (String(repliedMessage.sender) === userId &&
-                String(repliedMessage.recipient) === recipientId) ||
-              (String(repliedMessage.sender) === recipientId &&
-                String(repliedMessage.recipient) === userId);
-
-            if (belongsToConversation) {
-              validReplyTo = repliedMessage._id;
-            }
-          }
-        }
-
-        /*
-          Determine delivery status.
-        */
-
-        const deliveryStatus = isUserOnline(recipientId) ? "delivered" : "sent";
-
-        /*
-          Create message.
-        */
-
-        const message = await Message.create({
-          sender: userId,
-          senderUsername: sender.username,
-          recipient: recipientId,
-          content: content.trim(),
-          room: null,
-          status: deliveryStatus,
-          replyTo: validReplyTo,
-        });
-
-        await message.populate("sender", "username displayName profilePicture");
-
-        await message.populate(
-          "recipient",
-          "username displayName profilePicture",
-        );
-
-        /*
-          Populate replied-to message.
-        */
-
-        if (message.replyTo) {
-          await message.populate({
-            path: "replyTo",
-            select: "sender senderUsername content createdAt",
-            populate: {
-              path: "sender",
-              select: "username displayName profilePicture",
-            },
-          });
-        }
-
-        /*
-          Update conversation.
-        */
-
-        conversation.lastMessage = message._id;
-        conversation.lastMessageAt = message.createdAt;
-
-        await conversation.save();
-
-        /*
-          ====================================================
-          REAL-TIME MESSAGE
-          ====================================================
-        */
-
-        emitToUser(userId, "new_message", message);
-
-        if (deliveryStatus === "delivered") {
-          emitToUser(recipientId, "new_message", message);
-        }
-
-        /*
-          ====================================================
-          REAL-TIME CONVERSATION UPDATE
-          ====================================================
-        */
-
-        const conversationUpdate = {
-          conversationId: conversation._id.toString(),
-          userId: recipientId,
-          lastMessage: {
-            _id: message._id.toString(),
-            content: message.content,
-            createdAt: message.createdAt,
-          },
-        };
-
-        emitToUser(userId, "conversation_updated", conversationUpdate);
-
-        emitToUser(recipientId, "conversation_updated", {
-          ...conversationUpdate,
-          userId,
-        });
-
-        return;
       }
 
-      /*
-        ======================================================
-        PUBLIC ROOM MESSAGE
-        ======================================================
-      */
+      const membership = await ClusterMember.findOne({
+        cluster: clusterIdString,
+        user: userId,
+        status: "active",
+      });
+
+      if (!membership) {
+        return socket.emit("cluster_error", {
+          message: "You are not a member of this Cluster",
+        });
+      }
+
+      if (!socket.clusterRooms.has(clusterIdString)) {
+        return socket.emit("cluster_error", {
+          message: "You are not connected to this Cluster",
+        });
+      }
+
+      const clusterRoom = getClusterRoom(clusterIdString);
 
       let validReplyTo = null;
 
-      if (replyTo) {
-        const repliedMessage = await Message.findById(replyTo);
+      if (replyTo && mongoose.Types.ObjectId.isValid(replyTo)) {
+        const repliedMessage = await Message.findOne({
+          _id: replyTo,
+          cluster: clusterIdString,
+        });
 
-        if (repliedMessage && repliedMessage.room === (room || "general")) {
+        if (repliedMessage) {
           validReplyTo = repliedMessage._id;
         }
       }
@@ -547,7 +700,8 @@ io.on("connection", async (socket) => {
         senderUsername: sender.username,
         recipient: null,
         content: content.trim(),
-        room: room || "general",
+        cluster: clusterIdString,
+        status: "delivered",
         replyTo: validReplyTo,
       });
 
@@ -556,7 +710,7 @@ io.on("connection", async (socket) => {
       if (message.replyTo) {
         await message.populate({
           path: "replyTo",
-          select: "sender senderUsername content createdAt room",
+          select: "sender senderUsername content createdAt cluster",
           populate: {
             path: "sender",
             select: "username displayName profilePicture",
@@ -564,120 +718,16 @@ io.on("connection", async (socket) => {
         });
       }
 
-      /*
-        Public room messages are immediately
-        broadcast to every connected client.
-      */
-
-      io.emit("new_message", message);
+      io.to(clusterRoom).emit("new_cluster_message", {
+        clusterId: clusterIdString,
+        message,
+      });
     } catch (error) {
-      console.error("Socket message error:", error);
-    }
-  });
+      console.error("Cluster message error:", error);
 
-  /*
-    ==========================================================
-    EDIT MESSAGE
-    ==========================================================
-
-    Only the original sender can edit their own message.
-
-    Supports:
-    - Direct messages
-    - Public room messages
-
-    The updated message is broadcast in real time
-    to every relevant client.
-  */
-
-  socket.on("edit_message", async (data) => {
-    try {
-      const { messageId, content } = data;
-
-      if (!messageId || !content || !content.trim()) {
-        return;
-      }
-
-      if (!mongoose.Types.ObjectId.isValid(messageId)) {
-        console.error("Invalid message ID for edit");
-        return;
-      }
-
-      const trimmedContent = content.trim();
-
-      if (trimmedContent.length > 2000) {
-        console.error("Edited message is too long");
-        return;
-      }
-
-      const message = await Message.findById(messageId);
-
-      if (!message) {
-        console.error("Message not found for edit");
-        return;
-      }
-
-      /*
-        Only the original sender can edit
-        their own message.
-      */
-
-      if (String(message.sender) !== userId) {
-        console.error("User can only edit their own messages");
-        return;
-      }
-
-      /*
-        Update message content and edited state.
-      */
-
-      message.content = trimmedContent;
-      message.edited = true;
-
-      await message.save();
-
-      /*
-        Save only the data required by the frontend.
-      */
-
-      const editedMessageData = {
-        messageId: message._id.toString(),
-        content: message.content,
-        edited: message.edited,
-        updatedAt: message.updatedAt,
-      };
-
-      /*
-        DM message.
-      */
-
-      if (message.recipient) {
-        emitToUser(
-          message.recipient.toString(),
-          "message_edited",
-          editedMessageData,
-        );
-
-        /*
-          Also update every other tab/device
-          belonging to the sender.
-        */
-
-        emitToUser(userId, "message_edited", editedMessageData);
-
-        return;
-      }
-
-      /*
-        Public room message.
-
-        Everyone connected should receive
-        the edited message.
-      */
-
-      io.emit("message_edited", editedMessageData);
-    } catch (error) {
-      console.error("Edit message error:", error);
+      socket.emit("cluster_error", {
+        message: "Failed to send Cluster message",
+      });
     }
   });
 
@@ -690,6 +740,17 @@ io.on("connection", async (socket) => {
   socket.on("disconnect", async () => {
     console.log("Socket disconnected:", socket.id);
 
+    if (socket.clusterRooms) {
+      for (const clusterId of socket.clusterRooms) {
+        const clusterRoom = getClusterRoom(clusterId);
+
+        socket.to(clusterRoom).emit("cluster_member_offline", {
+          clusterId: String(clusterId),
+          userId,
+        });
+      }
+    }
+
     const sockets = onlineUsers.get(userId);
 
     if (sockets) {
@@ -701,6 +762,155 @@ io.on("connection", async (socket) => {
     }
 
     await broadcastPresence(userId);
+  });
+
+  /*
+    ==========================================================
+    SEND DIRECT MESSAGE
+    ==========================================================
+  */
+
+  socket.on("send_message", async (data) => {
+    try {
+      const { content, recipient, replyTo } = data || {};
+
+      if (!content || !content.trim()) {
+        return;
+      }
+
+      if (!recipient) {
+        console.error(
+          "send_message requires a recipient. Use send_cluster_message for Clusters.",
+        );
+
+        return;
+      }
+
+      const sender = await User.findById(userId);
+
+      if (!sender || sender.isDeleted) {
+        console.error("Message sender no longer exists");
+        return;
+      }
+
+      const recipientId = String(recipient);
+
+      const recipientUser = await User.findById(recipientId);
+
+      if (!recipientUser || recipientUser.isDeleted) {
+        console.error("Message recipient no longer exists");
+        return;
+      }
+
+      if (recipientId === userId) {
+        console.error("User cannot message themselves");
+        return;
+      }
+
+      const friendship = await Friendship.findOne({
+        status: "accepted",
+        $or: [
+          {
+            requester: userId,
+            recipient: recipientId,
+          },
+          {
+            requester: recipientId,
+            recipient: userId,
+          },
+        ],
+      });
+
+      if (!friendship) {
+        console.error("Users are not friends");
+        return;
+      }
+
+      const conversation = await getOrCreateConversation(userId, recipientId);
+
+      let validReplyTo = null;
+
+      if (replyTo && mongoose.Types.ObjectId.isValid(replyTo)) {
+        const repliedMessage = await Message.findOne({
+          _id: replyTo,
+          cluster: null,
+          $or: [
+            {
+              sender: userId,
+              recipient: recipientId,
+            },
+            {
+              sender: recipientId,
+              recipient: userId,
+            },
+          ],
+        });
+
+        if (repliedMessage) {
+          validReplyTo = repliedMessage._id;
+        }
+      }
+
+      const deliveryStatus = isUserOnline(recipientId) ? "delivered" : "sent";
+
+      const message = await Message.create({
+        sender: userId,
+        senderUsername: sender.username,
+        recipient: recipientId,
+        content: content.trim(),
+        cluster: null,
+        status: deliveryStatus,
+        replyTo: validReplyTo,
+      });
+
+      await message.populate("sender", "username displayName profilePicture");
+
+      await message.populate(
+        "recipient",
+        "username displayName profilePicture",
+      );
+
+      if (message.replyTo) {
+        await message.populate({
+          path: "replyTo",
+          select: "sender senderUsername content createdAt",
+          populate: {
+            path: "sender",
+            select: "username displayName profilePicture",
+          },
+        });
+      }
+
+      conversation.lastMessage = message._id;
+      conversation.lastMessageAt = message.createdAt;
+
+      await conversation.save();
+
+      emitToUser(userId, "new_message", message);
+
+      if (deliveryStatus === "delivered") {
+        emitToUser(recipientId, "new_message", message);
+      }
+
+      const conversationUpdate = {
+        conversationId: conversation._id.toString(),
+        userId: recipientId,
+        lastMessage: {
+          _id: message._id.toString(),
+          content: message.content,
+          createdAt: message.createdAt,
+        },
+      };
+
+      emitToUser(userId, "conversation_updated", conversationUpdate);
+
+      emitToUser(recipientId, "conversation_updated", {
+        ...conversationUpdate,
+        userId,
+      });
+    } catch (error) {
+      console.error("Socket message error:", error);
+    }
   });
 });
 

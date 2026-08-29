@@ -14,9 +14,27 @@ const messageSchema = new mongoose.Schema(
       trim: true,
     },
 
+    /*
+      DM recipient.
+
+      Used only for direct messages.
+      Cluster messages have recipient = null.
+    */
     recipient: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
+    },
+
+    /*
+      Cluster this message belongs to.
+
+      Used only for Cluster messages.
+      DM messages have cluster = null.
+    */
+    cluster: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Cluster",
       default: null,
     },
 
@@ -25,11 +43,6 @@ const messageSchema = new mongoose.Schema(
       required: true,
       trim: true,
       maxlength: 2000,
-    },
-
-    room: {
-      type: String,
-      default: null,
     },
 
     /*
@@ -47,6 +60,10 @@ const messageSchema = new mongoose.Schema(
       sent      = saved by the server
       delivered = recipient received the message
       read      = recipient opened/read the conversation
+
+      For Cluster messages, this will initially behave
+      differently from DMs because multiple members can
+      receive the message.
     */
     status: {
       type: String,
@@ -66,6 +83,19 @@ const messageSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+/*
+  Helpful indexes for message retrieval.
+
+  DM queries:
+  sender + recipient
+
+  Cluster queries:
+  cluster + createdAt
+*/
+messageSchema.index({ sender: 1, recipient: 1, createdAt: 1 });
+messageSchema.index({ recipient: 1, sender: 1, createdAt: 1 });
+messageSchema.index({ cluster: 1, createdAt: 1 });
 
 const Message = mongoose.model("Message", messageSchema);
 

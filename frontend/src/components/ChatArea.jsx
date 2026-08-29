@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import Message from "./Message";
 import MessageInput from "./MessageInput";
+import ClusterMembersPanel from "./ClusterMembersPanel";
 import { authFetch } from "../utils/authFetch";
 import { usePresence } from "../context/PresenceContext";
 
@@ -15,52 +16,31 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
   const [isLoading, setIsLoading] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
+  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+  const [isClusterMembersOpen, setIsClusterMembersOpen] = useState(false);
 
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const selectedChatRef = useRef(selectedChat);
-
-  /*
-    Controls whether a messages update should scroll
-    to the latest message.
-
-    true  = new message / initial history load
-    false = edit / unsend / read / delivery / chat switch
-  */
   const shouldAutoScrollRef = useRef(false);
 
-  /*
-    ============================================================
-    KEEP CURRENT CHAT AVAILABLE TO SOCKET
-    ============================================================
-  */
   useEffect(() => {
     selectedChatRef.current = selectedChat;
   }, [selectedChat]);
 
-  /*
-    ============================================================
-    CHANGE CONVERSATION
-    ============================================================
-  */
   useEffect(() => {
+    setIsOtherUserTyping(false);
     setReplyingTo(null);
     setEditingMessage(null);
-
+    setIsClusterMembersOpen(false);
     shouldAutoScrollRef.current = false;
-
     setMessages([]);
   }, [selectedChat]);
 
-  /*
-    ============================================================
-    SOCKET CONNECTION
-    ============================================================
-  */
   useEffect(() => {
     const token = localStorage.getItem("token");
 
-    if (!token || !user?.id) {
+    if (!token || !user?._id) {
       console.error("Cannot create chat socket: authentication missing.");
       return;
     }
@@ -83,11 +63,42 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       console.log("Chat socket disconnected:", reason);
     });
 
-    /*
-      ==========================================================
-      NEW MESSAGE
-      ==========================================================
-    */
+    newSocket.on("typing_start", ({ userId }) => {
+      if (!userId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (!currentChat || currentChat.type !== "dm") {
+        return;
+      }
+
+      if (String(userId) !== String(currentChat.user?._id)) {
+        return;
+      }
+
+      setIsOtherUserTyping(true);
+    });
+
+    newSocket.on("typing_stop", ({ userId }) => {
+      if (!userId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (!currentChat || currentChat.type !== "dm") {
+        return;
+      }
+
+      if (String(userId) !== String(currentChat.user?._id)) {
+        return;
+      }
+
+      setIsOtherUserTyping(false);
+    });
+
     newSocket.on("new_message", (newMessage) => {
       if (!newMessage?._id) {
         return;
@@ -99,10 +110,15 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         return;
       }
 
+      if (
+        currentChat.type === "dm" &&
+        newMessage.sender &&
+        String(newMessage.sender._id) === String(currentChat.user?._id)
+      ) {
+        setIsOtherUserTyping(false);
+      }
+
       setMessages((currentMessages) => {
-        /*
-          Never add the same message twice.
-        */
         if (
           currentMessages.some(
             (message) => String(message._id) === String(newMessage._id),
@@ -111,64 +127,12 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           return currentMessages;
         }
 
-        /*
-          ========================================================
-          PUBLIC ROOM
-          ========================================================
-        */
-        if (currentChat.type === "room") {
-          const currentRoom = currentChat.room || "general";
-          const messageRoom = newMessage.room || "general";
-
-          const isCorrectRoom =
-            !newMessage.recipient &&
-            String(messageRoom) === String(currentRoom);
-
-          if (!isCorrectRoom) {
-            return currentMessages;
-          }
-
-          let sender = newMessage.sender;
-
-          if (sender) {
-            sender = {
-              ...sender,
-              profilePicture:
-                sender.profilePicture ||
-                (String(sender._id) === String(user.id)
-                  ? user.profilePicture || ""
-                  : ""),
-              displayName:
-                sender.displayName ||
-                (String(sender._id) === String(user.id)
-                  ? user.displayName || ""
-                  : ""),
-              username:
-                sender.username ||
-                (String(sender._id) === String(user.id)
-                  ? user.username || ""
-                  : ""),
-            };
-          }
-
-          shouldAutoScrollRef.current = true;
-
-          return [
-            ...currentMessages,
-            {
-              ...newMessage,
-              sender,
-            },
-          ];
+        if (currentChat.type === "cluster") {
+          return currentMessages;
         }
 
-        /*
-          ========================================================
-          DIRECT MESSAGE
-          ========================================================
-        */
         if (currentChat.type === "dm") {
-          const currentUserId = String(user.id);
+          const currentUserId = String(user._id);
           const otherUserId = String(currentChat.user?._id);
 
           if (!newMessage.sender || !newMessage.recipient || !otherUserId) {
@@ -225,11 +189,65 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       });
     });
 
-    /*
-      ==========================================================
-      MESSAGE DELIVERED
-      ==========================================================
-    */
+    newSocket.on("new_cluster_message", ({ clusterId, message }) => {
+      if (!message?._id || !clusterId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (
+        !currentChat ||
+        currentChat.type !== "cluster" ||
+        !currentChat.cluster?._id
+      ) {
+        return;
+      }
+
+      if (String(clusterId) !== String(currentChat.cluster._id)) {
+        return;
+      }
+
+      setMessages((currentMessages) => {
+        if (
+          currentMessages.some(
+            (currentMessage) =>
+              String(currentMessage._id) === String(message._id),
+          )
+        ) {
+          return currentMessages;
+        }
+
+        let normalizedMessage = message;
+
+        if (message.sender) {
+          const senderId = String(message.sender._id);
+
+          normalizedMessage = {
+            ...message,
+            sender: {
+              ...message.sender,
+              profilePicture:
+                message.sender.profilePicture ||
+                (senderId === String(user._id)
+                  ? user.profilePicture || ""
+                  : ""),
+              displayName:
+                message.sender.displayName ||
+                (senderId === String(user._id) ? user.displayName || "" : ""),
+              username:
+                message.sender.username ||
+                (senderId === String(user._id) ? user.username || "" : ""),
+            },
+          };
+        }
+
+        shouldAutoScrollRef.current = true;
+
+        return [...currentMessages, normalizedMessage];
+      });
+    });
+
     newSocket.on("message_delivered", ({ messageId }) => {
       if (!messageId) {
         return;
@@ -247,11 +265,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       );
     });
 
-    /*
-      ==========================================================
-      MESSAGES READ
-      ==========================================================
-    */
     newSocket.on("messages_read", ({ messageIds }) => {
       if (!Array.isArray(messageIds) || messageIds.length === 0) {
         return;
@@ -271,11 +284,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       );
     });
 
-    /*
-      ==========================================================
-      MESSAGE EDITED
-      ==========================================================
-    */
     newSocket.on("message_edited", ({ messageId, content, isEdited }) => {
       if (!messageId) {
         return;
@@ -294,11 +302,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       );
     });
 
-    /*
-      ==========================================================
-      MESSAGE UNSENT
-      ==========================================================
-    */
     newSocket.on("message_unsent", ({ messageId }) => {
       if (!messageId) {
         return;
@@ -312,20 +315,12 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         ),
       );
 
-      /*
-        If the message being unsent is currently being replied to,
-        clear the reply composer.
-      */
       setReplyingTo((currentReply) =>
         currentReply && String(currentReply._id) === String(messageId)
           ? null
           : currentReply,
       );
 
-      /*
-        If the message being unsent is currently being edited,
-        cancel editing.
-      */
       setEditingMessage((currentEdit) =>
         currentEdit && String(currentEdit._id) === String(messageId)
           ? null
@@ -339,13 +334,64 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       newSocket.removeAllListeners();
       newSocket.disconnect();
     };
-  }, [user?.id]);
+  }, [user?._id]);
 
-  /*
-    ============================================================
-    FETCH CURRENT CONVERSATION HISTORY
-    ============================================================
-  */
+  useEffect(() => {
+    if (!socket || !selectedChat) {
+      return;
+    }
+
+    if (selectedChat.type !== "cluster" || !selectedChat.cluster?._id) {
+      return;
+    }
+
+    const clusterId = String(selectedChat.cluster._id);
+
+    const joinCluster = () => {
+      console.log("[CLUSTER ROOM] Joining:", clusterId);
+
+      socket.emit("join_cluster", {
+        clusterId,
+      });
+    };
+
+    if (socket.connected) {
+      joinCluster();
+    } else {
+      socket.once("connect", joinCluster);
+    }
+
+    return () => {
+      socket.off("connect", joinCluster);
+
+      if (socket.connected) {
+        console.log("[CLUSTER ROOM] Leaving:", clusterId);
+
+        socket.emit("leave_cluster", {
+          clusterId,
+        });
+      }
+    };
+  }, [socket, selectedChat]);
+
+  const stopTyping = () => {
+    const currentChat = selectedChatRef.current;
+
+    if (
+      !socket ||
+      !socket.connected ||
+      !currentChat ||
+      currentChat.type !== "dm" ||
+      !currentChat.user?._id
+    ) {
+      return;
+    }
+
+    socket.emit("typing_stop", {
+      recipient: currentChat.user._id,
+    });
+  };
+
   useEffect(() => {
     if (!selectedChat) {
       return;
@@ -360,9 +406,19 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         let url;
 
         if (selectedChat.type === "dm") {
+          if (!selectedChat.user?._id) {
+            setMessages([]);
+            return;
+          }
+
           url = `http://localhost:5000/api/messages/dm/${selectedChat.user._id}`;
-        } else if (selectedChat.type === "room") {
-          url = "http://localhost:5000/api/messages";
+        } else if (selectedChat.type === "cluster") {
+          if (!selectedChat.cluster?._id) {
+            setMessages([]);
+            return;
+          }
+
+          url = `http://localhost:5000/api/clusters/${selectedChat.cluster._id}/messages`;
         } else {
           setMessages([]);
           return;
@@ -385,27 +441,25 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           ? data.messages
           : [];
 
-        /*
-          ========================================================
-          FILTER HISTORY ON THE CLIENT
-          ========================================================
-        */
         let filteredMessages = [];
 
-        if (selectedChat.type === "room") {
-          const currentRoom = selectedChat.room || "general";
+        if (selectedChat.type === "cluster") {
+          const currentClusterId = String(selectedChat.cluster._id);
 
           filteredMessages = fetchedMessages.filter((message) => {
-            const messageRoom = message.room || "general";
-
-            return (
-              !message.recipient && String(messageRoom) === String(currentRoom)
+            const messageClusterId = String(
+              message.clusterId ||
+                message.cluster?._id ||
+                message.cluster ||
+                "",
             );
+
+            return messageClusterId === currentClusterId;
           });
         }
 
         if (selectedChat.type === "dm") {
-          const currentUserId = String(user.id);
+          const currentUserId = String(user._id);
           const otherUserId = String(selectedChat.user?._id);
 
           filteredMessages = fetchedMessages.filter((message) => {
@@ -426,10 +480,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           });
         }
 
-        /*
-          Make sure this request still belongs to the
-          currently selected conversation.
-        */
         const latestChat = selectedChatRef.current;
 
         if (!latestChat) {
@@ -438,20 +488,15 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
 
         const sameChat =
           latestChat.type === selectedChat.type &&
-          (selectedChat.type === "room"
-            ? String(latestChat.room || "general") ===
-              String(selectedChat.room || "general")
+          (selectedChat.type === "cluster"
+            ? String(latestChat.cluster?._id) ===
+              String(selectedChat.cluster?._id)
             : String(latestChat.user?._id) === String(selectedChat.user?._id));
 
         if (!sameChat) {
           return;
         }
 
-        /*
-          ========================================================
-          NORMALIZE SENDER DATA
-          ========================================================
-        */
         const normalizedMessages = filteredMessages.map((message) => {
           if (!message.sender) {
             return message;
@@ -459,7 +504,7 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
 
           const senderId = String(message.sender._id);
 
-          if (senderId === String(user.id)) {
+          if (senderId === String(user._id)) {
             return {
               ...message,
               sender: {
@@ -498,9 +543,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           return message;
         });
 
-        /*
-          History loading should scroll to the bottom.
-        */
         shouldAutoScrollRef.current = true;
 
         setMessages(
@@ -527,11 +569,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     };
   }, [selectedChat]);
 
-  /*
-    ============================================================
-    MARK INCOMING DM MESSAGES AS READ
-    ============================================================
-  */
   useEffect(() => {
     if (
       !socket ||
@@ -565,11 +602,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     });
   }, [socket, selectedChat, messages]);
 
-  /*
-    ============================================================
-    AUTO SCROLL
-    ============================================================
-  */
   useEffect(() => {
     if (!shouldAutoScrollRef.current) {
       return;
@@ -582,11 +614,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     });
   }, [messages]);
 
-  /*
-    ============================================================
-    JUMP TO REPLIED MESSAGE
-    ============================================================
-  */
   const handleJumpToMessage = (messageId) => {
     if (!messageId) {
       return;
@@ -618,19 +645,11 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     }, 1200);
   };
 
-  /*
-    ============================================================
-    REPLY
-    ============================================================
-  */
   const handleReplyMessage = (message) => {
     if (!message?._id) {
       return;
     }
 
-    /*
-      Editing and replying are mutually exclusive.
-    */
     setEditingMessage(null);
     setReplyingTo(message);
   };
@@ -639,31 +658,11 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     setReplyingTo(null);
   };
 
-  /*
-    ============================================================
-    EDIT
-    ============================================================
-    
-    Message.jsx passes the COMPLETE message object:
-    
-      {
-        _id,
-        content
-      }
-    
-    We do NOT send the PATCH request here.
-    
-    MessageInput owns the actual edit submission because it already
-    has the editing UI and submit logic.
-    */
   const handleEditMessage = (message) => {
     if (!message?._id) {
       return;
     }
 
-    /*
-      Editing and replying are mutually exclusive.
-    */
     setReplyingTo(null);
 
     setEditingMessage({
@@ -672,22 +671,10 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     });
   };
 
-  /*
-    ============================================================
-    CANCEL EDIT
-    ============================================================
-  */
   const handleCancelEdit = () => {
     setEditingMessage(null);
   };
 
-  /*
-    ============================================================
-    MESSAGE EDITED
-    ============================================================
-    
-    Called by MessageInput after the PATCH request succeeds.
-    */
   const handleMessageEdited = (messageId, content) => {
     if (!messageId) {
       return;
@@ -710,11 +697,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     setEditingMessage(null);
   };
 
-  /*
-    ============================================================
-    UNSEND
-    ============================================================
-  */
   const handleUnsendMessage = async (messageId) => {
     if (!messageId) {
       return;
@@ -735,9 +717,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         return;
       }
 
-      /*
-        Preserve the current scroll position.
-      */
       shouldAutoScrollRef.current = false;
 
       setMessages((currentMessages) =>
@@ -746,20 +725,12 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         ),
       );
 
-      /*
-        If the deleted message was being replied to,
-        cancel that reply.
-      */
       setReplyingTo((currentReply) =>
         currentReply && String(currentReply._id) === String(messageId)
           ? null
           : currentReply,
       );
 
-      /*
-        If the deleted message was being edited,
-        cancel editing.
-      */
       setEditingMessage((currentEdit) =>
         currentEdit && String(currentEdit._id) === String(messageId)
           ? null
@@ -770,11 +741,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     }
   };
 
-  /*
-    ============================================================
-    WELCOME SCREEN
-    ============================================================
-  */
   if (!selectedChat) {
     return (
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
@@ -790,11 +756,11 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
 
             <p className="mt-3 text-sm leading-6 text-chime-secondary sm:text-base">
               A friendly place to connect and chat. Search for someone in the
-              sidebar and start a conversation.
+              sidebar or join a Cluster to start a conversation.
             </p>
 
             <p className="mt-2 text-sm text-chime-secondary">
-              Your conversations will appear here.
+              Your conversations and Clusters will appear here.
             </p>
           </div>
         </div>
@@ -802,24 +768,28 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     );
   }
 
-  /*
-    ============================================================
-    CHAT INFORMATION
-    ============================================================
-  */
-  const chatDisplayName =
-    selectedChat.type === "dm"
-      ? selectedChat.user.displayName || selectedChat.user.username
-      : "General";
+  const isDM = selectedChat.type === "dm";
+  const isCluster = selectedChat.type === "cluster";
 
-  const chatProfilePicture =
-    selectedChat.type === "dm" ? selectedChat.user.profilePicture || "" : "";
+  const chatDisplayName = isDM
+    ? selectedChat.user?.displayName || selectedChat.user?.username
+    : selectedChat.cluster?.name || "Unnamed Cluster";
 
-  const chatSubtitle =
-    selectedChat.type === "dm" ? "Direct message" : "Public room";
+  const chatProfilePicture = isDM
+    ? selectedChat.user?.profilePicture || ""
+    : "";
 
-  const chatPresence =
-    selectedChat.type === "dm" ? getPresence(selectedChat.user._id) : null;
+  const clusterVisibility =
+    selectedChat.cluster?.visibility ||
+    selectedChat.cluster?.privacy ||
+    (selectedChat.cluster?.isPublic ? "public" : "private");
+
+  const clusterVisibilityLabel =
+    String(clusterVisibility).toLowerCase() === "public"
+      ? "Public Cluster"
+      : "Private Cluster";
+
+  const chatPresence = isDM ? getPresence(selectedChat.user?._id) : null;
 
   const presenceLabel =
     chatPresence === "online"
@@ -835,13 +805,8 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         ? "bg-amber-400"
         : "bg-stone-400";
 
-  const canMessage =
-    selectedChat.type === "room" || selectedChat.isFriend !== false;
+  const canMessage = isCluster || selectedChat.isFriend !== false;
 
-  /*
-    Find the latest message from the current user
-    that has been read.
-  */
   let latestReadMessageId = null;
 
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -849,7 +814,7 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
 
     if (
       message.sender?._id &&
-      String(message.sender._id) === String(user.id) &&
+      String(message.sender._id) === String(user._id) &&
       message.status === "read"
     ) {
       latestReadMessageId = String(message._id);
@@ -857,13 +822,8 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     }
   }
 
-  /*
-    ============================================================
-    OPEN CHAT PROFILE
-    ============================================================
-  */
   const handleOpenChatProfile = () => {
-    if (selectedChat.type !== "dm") {
+    if (!isDM) {
       return;
     }
 
@@ -882,16 +842,10 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     }
   };
 
-  /*
-    ============================================================
-    RENDER
-    ============================================================
-  */
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
-      {/* Chat Header */}
+    <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
       <header className="relative z-20 flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-6">
-        {selectedChat.type === "dm" && (
+        {isDM && (
           <button
             type="button"
             onClick={handleOpenChatProfile}
@@ -910,12 +864,14 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           </button>
         )}
 
-        {selectedChat.type === "room" && (
-          <span className="mr-3 text-xl text-chime-secondary">#</span>
+        {isCluster && (
+          <div className="mr-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-chime-gold text-lg font-bold text-chime-text">
+            {chatDisplayName?.trim()?.charAt(0)?.toUpperCase() || "C"}
+          </div>
         )}
 
         <div className="min-w-0">
-          {selectedChat.type === "dm" ? (
+          {isDM ? (
             <button
               type="button"
               onClick={handleOpenChatProfile}
@@ -936,18 +892,31 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
               </div>
             </button>
           ) : (
-            <>
+            <div className="min-w-0">
               <h2 className="truncate font-bold text-chime-text">
                 {chatDisplayName}
               </h2>
 
-              <p className="text-sm text-chime-secondary">{chatSubtitle}</p>
-            </>
+              <p className="text-xs text-chime-secondary">
+                {clusterVisibilityLabel}
+              </p>
+            </div>
           )}
         </div>
+
+        {isCluster && (
+          <button
+            type="button"
+            onClick={() => setIsClusterMembersOpen(true)}
+            className="ml-auto flex h-9 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-chime-secondary transition hover:bg-stone-100 hover:text-chime-text"
+            aria-label="View Cluster members"
+          >
+            <span className="text-base">👥</span>
+            <span>Members</span>
+          </button>
+        )}
       </header>
 
-      {/* Messages */}
       <div
         ref={messagesContainerRef}
         className="relative z-10 min-h-0 flex-1 overflow-y-auto p-6 pb-1"
@@ -960,21 +929,21 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-chime-gold text-2xl">
-                {selectedChat.type === "dm" ? "💬" : "#"}
+                {isDM ? "💬" : "C"}
               </div>
 
               <h3 className="mt-4 font-bold text-chime-text">
-                {selectedChat.type === "dm"
+                {isDM
                   ? `Start chatting with ${chatDisplayName}`
-                  : "Welcome to General"}
+                  : `Welcome to ${chatDisplayName}`}
               </h3>
 
               <p className="mt-1 text-sm text-chime-secondary">
-                {selectedChat.type === "dm"
+                {isDM
                   ? canMessage
                     ? "Send a message to start the conversation."
                     : "You are no longer friends with this user."
-                  : "This is the beginning of this room."}
+                  : "This is the beginning of this Cluster."}
               </p>
             </div>
           </div>
@@ -982,7 +951,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           <>
             {messages.map((message, index) => {
               const senderId = message.sender?._id || null;
-
               const isDeletedUser = !message.sender;
 
               const senderDisplayName = isDeletedUser
@@ -998,10 +966,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
                 : message.sender.profilePicture || "";
 
               const isOwnMessage =
-                !isDeletedUser && String(senderId) === String(user.id);
+                !isDeletedUser && String(senderId) === String(user._id);
 
               const previousMessage = messages[index - 1];
-
               const previousSenderId = previousMessage?.sender?._id || null;
 
               const previousIsDeletedUser = !previousMessage?.sender;
@@ -1066,9 +1033,22 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         )}
       </div>
 
-      {/* Message Input */}
+      {isDM && isOtherUserTyping && (
+        <div className="shrink-0 px-6 pb-1">
+          <div className="flex h-7 items-center gap-2 text-xs text-chime-secondary">
+            <span>{chatDisplayName} is typing</span>
+
+            <span className="flex items-center gap-0.5">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary" />
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="relative z-30 shrink-0">
-        {selectedChat.type === "dm" && !canMessage ? (
+        {isDM && !canMessage ? (
           <div className="border-t border-stone-200 bg-chime-background px-6 py-4 text-center">
             <p className="text-sm font-medium text-chime-secondary">
               You are no longer friends with {chatDisplayName}.
@@ -1088,9 +1068,20 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
             editingMessage={editingMessage}
             onCancelEdit={handleCancelEdit}
             onMessageEdited={handleMessageEdited}
+            onTyping={() => {}}
+            onStopTyping={stopTyping}
           />
         )}
       </div>
+
+      {isCluster && (
+        <ClusterMembersPanel
+          isOpen={isClusterMembersOpen}
+          cluster={selectedChat.cluster}
+          onClose={() => setIsClusterMembersOpen(false)}
+          onOpenProfile={onOpenProfile}
+        />
+      )}
     </main>
   );
 }

@@ -10,62 +10,162 @@ function MessageInput({
   editingMessage,
   onCancelEdit,
   onMessageEdited,
+  onTyping,
+  onStopTyping,
 }) {
   const [content, setContent] = useState("");
   const inputRef = useRef(null);
 
-  /*
-    ============================================================
-    LOAD MESSAGE INTO INPUT WHEN EDITING STARTS
-    ============================================================
-  */
-  useEffect(() => {
-    if (editingMessage) {
-      setContent(editingMessage.content || "");
+  const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
 
-      /*
-        Focus the input and place the cursor
-        at the end of the message.
-      */
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-
-        const length = inputRef.current?.value.length || 0;
-
-        inputRef.current?.setSelectionRange(length, length);
-      });
+  const stopTyping = () => {
+    if (!isTypingRef.current) {
+      return;
     }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (socket?.connected && selectedChat) {
+      if (selectedChat.type === "dm") {
+        const recipientId = selectedChat.user?._id;
+
+        if (recipientId) {
+          socket.emit("typing_stop", {
+            recipient: recipientId,
+          });
+        }
+      }
+
+      if (selectedChat.type === "cluster") {
+        const clusterId = selectedChat.cluster?._id;
+
+        if (clusterId) {
+          socket.emit("cluster_typing_stop", {
+            clusterId,
+          });
+        }
+      }
+    }
+
+    isTypingRef.current = false;
+    onStopTyping?.();
+  };
+
+  const handleTyping = (event) => {
+    const value = event.target.value;
+
+    setContent(value);
+
+    if (!socket || !socket.connected || !selectedChat || editingMessage) {
+      return;
+    }
+
+    let typingTarget = null;
+
+    if (selectedChat.type === "dm") {
+      typingTarget = selectedChat.user?._id;
+    } else if (selectedChat.type === "cluster") {
+      typingTarget = selectedChat.cluster?._id;
+    }
+
+    if (!typingTarget) {
+      return;
+    }
+
+    if (!isTypingRef.current && value.trim()) {
+      if (selectedChat.type === "dm") {
+        socket.emit("typing_start", {
+          recipient: typingTarget,
+        });
+      } else if (selectedChat.type === "cluster") {
+        socket.emit("cluster_typing_start", {
+          clusterId: typingTarget,
+        });
+      }
+
+      isTypingRef.current = true;
+      onTyping?.();
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    if (value.trim()) {
+      typingTimeoutRef.current = setTimeout(() => {
+        stopTyping();
+      }, 1000);
+    } else {
+      stopTyping();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      if (isTypingRef.current && socket?.connected && selectedChat) {
+        if (selectedChat.type === "dm") {
+          const recipientId = selectedChat.user?._id;
+
+          if (recipientId) {
+            socket.emit("typing_stop", {
+              recipient: recipientId,
+            });
+          }
+        }
+
+        if (selectedChat.type === "cluster") {
+          const clusterId = selectedChat.cluster?._id;
+
+          if (clusterId) {
+            socket.emit("cluster_typing_stop", {
+              clusterId,
+            });
+          }
+        }
+      }
+
+      isTypingRef.current = false;
+    };
+  }, [socket, selectedChat]);
+
+  useEffect(() => {
+    if (!editingMessage) {
+      return;
+    }
+
+    stopTyping();
+
+    setContent(editingMessage.content || "");
+
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+
+      const length = inputRef.current?.value.length || 0;
+
+      inputRef.current?.setSelectionRange(length, length);
+    });
   }, [editingMessage]);
 
-  /*
-    ============================================================
-    FOCUS INPUT WHEN REPLYING
-    ============================================================
-  */
   useEffect(() => {
     if (replyingTo && !editingMessage) {
       inputRef.current?.focus();
     }
   }, [replyingTo, editingMessage]);
 
-  /*
-    ============================================================
-    CANCEL EDIT
-    ============================================================
-  */
   const handleCancelEdit = () => {
+    stopTyping();
     setContent("");
-
-    if (onCancelEdit) {
-      onCancelEdit();
-    }
+    onCancelEdit?.();
   };
 
-  /*
-    ============================================================
-    SUBMIT
-    ============================================================
-  */
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -75,27 +175,12 @@ function MessageInput({
       return;
     }
 
-    /*
-      ==========================================================
-      EDIT MODE
-      ==========================================================
-    */
     if (editingMessage) {
       const originalContent = editingMessage.content?.trim() || "";
 
-      /*
-        Nothing actually changed.
-
-        Close edit mode without sending a PATCH request
-        and without marking the message as edited.
-      */
       if (trimmedContent === originalContent) {
         setContent("");
-
-        if (onCancelEdit) {
-          onCancelEdit();
-        }
-
+        onCancelEdit?.();
         return;
       }
 
@@ -120,21 +205,10 @@ function MessageInput({
           return;
         }
 
-        /*
-          Tell ChatArea to update the message immediately.
-        */
-        if (onMessageEdited) {
-          onMessageEdited(editingMessage._id, trimmedContent);
-        }
+        onMessageEdited?.(editingMessage._id, trimmedContent);
 
-        /*
-          Return input to normal Send mode.
-        */
         setContent("");
-
-        if (onCancelEdit) {
-          onCancelEdit();
-        }
+        onCancelEdit?.();
       } catch (error) {
         console.error("Failed to edit message:", error);
       }
@@ -142,52 +216,62 @@ function MessageInput({
       return;
     }
 
-    /*
-      ==========================================================
-      NORMAL SEND MODE
-      ==========================================================
-    */
-    if (!socket || !socket.connected) {
+    if (!socket?.connected) {
       console.error("Socket is not connected");
       return;
     }
 
-    const messageData = {
-      content: trimmedContent,
-    };
-
-    /*
-      Add the destination depending on
-      whether this is a DM or public room.
-    */
-    if (selectedChat?.type === "dm") {
-      messageData.recipient = selectedChat.user._id;
-    } else if (selectedChat?.type === "room") {
-      messageData.room = selectedChat.room || "general";
-    } else {
+    if (!selectedChat) {
       return;
     }
 
-    /*
-      If the user is replying to a message,
-      send that message's ID to the backend.
-    */
-    if (replyingTo?._id) {
-      messageData.replyTo = replyingTo._id;
+    stopTyping();
+
+    if (selectedChat.type === "dm") {
+      const recipientId = selectedChat.user?._id;
+
+      if (!recipientId) {
+        console.error("Cannot send message: recipient is missing");
+        return;
+      }
+
+      const messageData = {
+        recipient: recipientId,
+        content: trimmedContent,
+      };
+
+      if (replyingTo?._id) {
+        messageData.replyTo = replyingTo._id;
+      }
+
+      socket.emit("send_message", messageData);
+    } else if (selectedChat.type === "cluster") {
+      const clusterId = selectedChat.cluster?._id;
+
+      if (!clusterId) {
+        console.error("Cannot send message: cluster is missing");
+        return;
+      }
+
+      const messageData = {
+        clusterId,
+        content: trimmedContent,
+      };
+
+      if (replyingTo?._id) {
+        messageData.replyTo = replyingTo._id;
+      }
+
+      socket.emit("send_cluster_message", messageData);
+    } else {
+      console.error("Unknown chat type:", selectedChat.type);
+      return;
     }
 
-    socket.emit("send_message", messageData);
-
-    /*
-      Clear the input after sending.
-    */
     setContent("");
 
-    /*
-      Clear the active reply.
-    */
-    if (replyingTo && onCancelReply) {
-      onCancelReply();
+    if (replyingTo) {
+      onCancelReply?.();
     }
   };
 
@@ -200,7 +284,6 @@ function MessageInput({
 
   return (
     <div className="border-t border-stone-200 bg-chime-background p-4">
-      {/* Edit Preview */}
       {isEditing && (
         <div className="mb-3 flex items-center gap-3 rounded-xl border border-stone-200 bg-chime-chat px-3 py-2.5">
           <div className="min-w-0 flex-1 border-l-2 border-chime-gold pl-3">
@@ -222,7 +305,6 @@ function MessageInput({
         </div>
       )}
 
-      {/* Reply Preview */}
       {!isEditing && replyingTo && (
         <div className="mb-3 flex items-center gap-3 rounded-xl border border-stone-200 bg-chime-chat px-3 py-2.5">
           <div className="min-w-0 flex-1 border-l-2 border-chime-gold pl-3">
@@ -258,7 +340,7 @@ function MessageInput({
                 : "Send a message..."
           }
           value={content}
-          onChange={(event) => setContent(event.target.value)}
+          onChange={handleTyping}
           className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-chime-chat px-4 py-3 text-sm text-chime-text outline-none placeholder:text-chime-secondary focus:border-chime-gold"
         />
 

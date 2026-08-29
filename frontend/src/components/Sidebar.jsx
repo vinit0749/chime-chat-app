@@ -9,14 +9,19 @@ import {
   LogOut,
   Users,
   MessageCircle,
+  Compass,
+  Plus,
 } from "lucide-react";
 import { authFetch } from "../utils/authFetch";
 import ConfirmModal from "./ConfirmModal";
+import CreateClusterModal from "./CreateClusterModal";
 
 function Sidebar({
   mobile = false,
   onClose,
   onSelectChat,
+  onSelectCluster,
+  onOpenDiscover,
   onOpenFriendRequests,
   onOpenProfile,
   onOpenUserProfile,
@@ -33,12 +38,14 @@ function Sidebar({
   const [friends, setFriends] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [clusters, setClusters] = useState([]);
   const [presence, setPresence] = useState({});
 
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(true);
+  const [loadingClusters, setLoadingClusters] = useState(true);
 
   const [modal, setModal] = useState({
     isOpen: false,
@@ -47,6 +54,8 @@ function Sidebar({
   });
 
   const [isModalLoading, setIsModalLoading] = useState(false);
+  const [isCreateClusterModalOpen, setIsCreateClusterModalOpen] =
+    useState(false);
 
   const searchRef = useRef(null);
 
@@ -130,17 +139,39 @@ function Sidebar({
     }
   };
 
+  const fetchClusters = async () => {
+    try {
+      const response = await authFetch(
+        "http://localhost:5000/api/clusters/mine",
+      );
+
+      if (response.status === 401) return;
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setClusters(data.clusters || []);
+      }
+    } catch (error) {
+      console.error("Failed to load Clusters:", error);
+    } finally {
+      setLoadingClusters(false);
+    }
+  };
+
   useEffect(() => {
     fetchCurrentUser();
     fetchFriends();
     fetchConversations();
     fetchRequests();
+    fetchClusters();
 
     const interval = setInterval(() => {
       fetchCurrentUser();
       fetchFriends();
       fetchConversations();
       fetchRequests();
+      fetchClusters();
     }, 2000);
 
     return () => clearInterval(interval);
@@ -180,8 +211,14 @@ function Sidebar({
       setPresence(initialPresence);
     });
 
+    socket.on("cluster_created", fetchClusters);
+    socket.on("cluster_joined", fetchClusters);
+    socket.on("cluster_left", fetchClusters);
+    socket.on("cluster_membership_updated", fetchClusters);
+    socket.on("cluster_membership_changed", fetchClusters);
+
     socket.on("connect_error", (error) => {
-      console.error("Presence socket connection failed:", error.message);
+      console.error("Socket connection failed:", error.message);
     });
 
     return () => {
@@ -324,6 +361,28 @@ function Sidebar({
     }
   };
 
+  const handleCreateCluster = async (cluster) => {
+    setIsCreateClusterModalOpen(false);
+
+    setClusters((currentClusters) => {
+      const exists = currentClusters.some(
+        (item) => String(item._id) === String(cluster?._id),
+      );
+
+      if (exists) {
+        return currentClusters;
+      }
+
+      return [...currentClusters, cluster];
+    });
+
+    await fetchClusters();
+
+    if (cluster?._id && onSelectCluster) {
+      onSelectCluster(cluster);
+    }
+  };
+
   const isFriend = (userId) => {
     return friends.some((friend) => String(friend._id) === String(userId));
   };
@@ -337,6 +396,22 @@ function Sidebar({
   const getUserStatus = (userId) => {
     return presence[userId] || "offline";
   };
+
+  const getClusterInitial = (cluster) => {
+    if (!cluster) {
+      return "C";
+    }
+
+    return cluster.name?.trim()?.charAt(0)?.toUpperCase() || "C";
+  };
+
+  const publicClusters = clusters.filter(
+    (cluster) => cluster.visibility === "public",
+  );
+
+  const privateClusters = clusters.filter(
+    (cluster) => cluster.visibility === "private",
+  );
 
   const handleSelectConversation = (conversation) => {
     onSelectChat({
@@ -383,12 +458,22 @@ function Sidebar({
     }
   };
 
-  const handleSelectGeneral = () => {
-    onSelectChat({
-      type: "room",
-      room: "general",
-      name: "General",
-    });
+  const handleDiscoverClusters = () => {
+    if (!onOpenDiscover) return;
+
+    onOpenDiscover();
+
+    if (mobile && onClose) {
+      onClose();
+    }
+  };
+
+  const handleSelectCluster = (cluster) => {
+    if (!cluster?._id || !onSelectCluster) {
+      return;
+    }
+
+    onSelectCluster(cluster);
 
     if (mobile && onClose) {
       onClose();
@@ -491,7 +576,6 @@ function Sidebar({
           mobile ? "flex" : "hidden md:flex"
         }`}
       >
-        {/* Header */}
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 px-5">
           <h1 className="text-2xl font-bold text-chime-text">Chime 🔔</h1>
 
@@ -506,9 +590,7 @@ function Sidebar({
           )}
         </div>
 
-        {/* Navigation */}
         <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-          {/* Search */}
           <div ref={searchRef} className="relative mb-6">
             <div className="flex items-center rounded-xl border border-stone-200 bg-chime-chat px-3">
               <Search size={17} className="shrink-0 text-chime-secondary" />
@@ -596,7 +678,6 @@ function Sidebar({
             )}
           </div>
 
-          {/* Direct Messages */}
           <div>
             <h2 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-chime-secondary">
               Direct Messages
@@ -643,24 +724,124 @@ function Sidebar({
             )}
           </div>
 
-          {/* Public Rooms */}
-          <div className="mt-6">
-            <h2 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-chime-secondary">
-              Public Rooms
-            </h2>
+          <div className="mt-3">
+            <div className="mb-3 flex items-center justify-between px-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-chime-secondary">
+                Clusters
+              </h2>
 
-            <button
-              onClick={handleSelectGeneral}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-chime-text transition hover:bg-chime-selected"
-            >
-              <span className="text-lg text-chime-secondary">#</span>
+              <button
+                type="button"
+                onClick={() => setIsCreateClusterModalOpen(true)}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+                title="Create or join a Cluster"
+                aria-label="Create or join a Cluster"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
 
-              <span className="truncate">General</span>
-            </button>
+            {loadingClusters ? (
+              <p className="px-2 py-2 text-sm text-chime-secondary">
+                Loading...
+              </p>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <h3 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-chime-secondary">
+                    Public
+                  </h3>
+
+                  {publicClusters.length === 0 ? (
+                    <p className="px-2 py-1 text-xs text-chime-secondary">
+                      No public Clusters joined.
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {publicClusters.map((cluster) => (
+                        <button
+                          key={cluster._id}
+                          type="button"
+                          onClick={() => handleSelectCluster(cluster)}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-chime-text transition ${
+                            activeView === `cluster-${cluster._id}`
+                              ? "bg-chime-selected"
+                              : "hover:bg-chime-selected"
+                          }`}
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-chime-gold text-sm font-bold text-chime-text">
+                            {getClusterInitial(cluster)}
+                          </div>
+
+                          <span className="min-w-0 flex-1 truncate">
+                            {cluster.name || "Unnamed Cluster"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-chime-secondary">
+                    Private
+                  </h3>
+
+                  {privateClusters.length === 0 ? (
+                    <p className="px-2 py-1 text-xs text-chime-secondary">
+                      No private Clusters joined.
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {privateClusters.map((cluster) => (
+                        <button
+                          key={cluster._id}
+                          type="button"
+                          onClick={() => handleSelectCluster(cluster)}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-chime-text transition ${
+                            activeView === `cluster-${cluster._id}`
+                              ? "bg-chime-selected"
+                              : "hover:bg-chime-selected"
+                          }`}
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-sm font-bold text-chime-text">
+                            {getClusterInitial(cluster)}
+                          </div>
+
+                          <span className="min-w-0 flex-1 truncate">
+                            {cluster.name || "Unnamed Cluster"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Friends */}
-          <div className="mt-auto border-t border-stone-200 pt-4">
+          <div className="mt-auto space-y-2 border-t border-stone-200 pt-4">
+            <button
+              type="button"
+              onClick={handleDiscoverClusters}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
+                activeView === "discover"
+                  ? "bg-chime-selected text-chime-text"
+                  : "text-chime-text hover:bg-chime-selected"
+              }`}
+            >
+              <Compass
+                size={18}
+                className={
+                  activeView === "discover"
+                    ? "text-chime-text"
+                    : "text-chime-secondary"
+                }
+              />
+
+              <span className="min-w-0 flex-1 truncate">Discover</span>
+            </button>
+
             <button
               onClick={handleOpenFriends}
               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
@@ -689,7 +870,6 @@ function Sidebar({
           </div>
         </nav>
 
-        {/* Profile */}
         <div className="shrink-0 border-t border-stone-200 p-4">
           <div className="flex items-center gap-2">
             <button
@@ -739,7 +919,6 @@ function Sidebar({
         </div>
       </aside>
 
-      {/* Confirmation Modal */}
       <ConfirmModal
         isOpen={modal.isOpen}
         title={
@@ -755,6 +934,13 @@ function Sidebar({
         onConfirm={handleConfirmModal}
         onCancel={closeModal}
         loading={isModalLoading}
+      />
+
+      <CreateClusterModal
+        isOpen={isCreateClusterModalOpen}
+        onClose={() => setIsCreateClusterModalOpen(false)}
+        onCreated={handleCreateCluster}
+        onOpenDiscover={handleDiscoverClusters}
       />
     </>
   );

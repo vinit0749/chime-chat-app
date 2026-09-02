@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
+import { MoreVertical } from "lucide-react";
 import Message from "./Message";
 import MessageInput from "./MessageInput";
 import ClusterMembersPanel from "./ClusterMembersPanel";
+import DmContextMenu from "./DmContextMenu";
+import ConfirmModal from "./ConfirmModal";
 import { authFetch } from "../utils/authFetch";
 import { usePresence } from "../context/PresenceContext";
 
@@ -19,24 +22,175 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
   const [isClusterMembersOpen, setIsClusterMembersOpen] = useState(false);
 
+  /*
+    DM relationship state.
+
+    "friend"       -> can message
+    "unfriended"   -> cannot message
+    "blocked"      -> current user blocked the other user
+    "blocked_by"   -> other user blocked current user
+  */
+  const [dmRelationship, setDmRelationship] = useState("friend");
+  const [isDmMenuOpen, setIsDmMenuOpen] = useState(false);
+  const [isRelationshipLoading, setIsRelationshipLoading] = useState(false);
+
+  /*
+    Custom confirmation modal state.
+
+    "unfriend" -> confirm unfriend
+    "block"    -> confirm block
+    null       -> modal closed
+  */
+  const [relationshipAction, setRelationshipAction] = useState(null);
+
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const selectedChatRef = useRef(selectedChat);
   const shouldAutoScrollRef = useRef(false);
+  const dmMenuRef = useRef(null);
 
   useEffect(() => {
     selectedChatRef.current = selectedChat;
   }, [selectedChat]);
 
+  /*
+    Reset chat-specific UI whenever the selected chat changes.
+  */
   useEffect(() => {
     setIsOtherUserTyping(false);
     setReplyingTo(null);
     setEditingMessage(null);
     setIsClusterMembersOpen(false);
+    setIsDmMenuOpen(false);
+    setIsRelationshipLoading(false);
+    setRelationshipAction(null);
     shouldAutoScrollRef.current = false;
     setMessages([]);
+
+    if (!selectedChat || selectedChat.type !== "dm") {
+      setDmRelationship("friend");
+      return;
+    }
+
+    /*
+      Respect relationship information already supplied by the sidebar
+      or other parent state when available.
+    */
+    if (selectedChat.isBlocked) {
+      setDmRelationship("blocked");
+      return;
+    }
+
+    if (selectedChat.isBlockedBy) {
+      setDmRelationship("blocked_by");
+      return;
+    }
+
+    if (selectedChat.isFriend === false) {
+      setDmRelationship("unfriended");
+      return;
+    }
+
+    setDmRelationship("friend");
   }, [selectedChat]);
 
+  /*
+    Load the current user's blocked list when opening a DM.
+
+    This lets ChatArea know immediately whether the current user has
+    blocked this person, even after a page reload.
+  */
+  useEffect(() => {
+    if (!selectedChat || selectedChat.type !== "dm") {
+      return;
+    }
+
+    const targetUserId = selectedChat.user?._id;
+
+    if (!targetUserId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadBlockedState = async () => {
+      try {
+        const response = await authFetch(
+          "http://localhost:5000/api/friends/blocked",
+        );
+
+        const data = await response.json();
+
+        if (cancelled || !response.ok) {
+          return;
+        }
+
+        const blockedUsers = Array.isArray(data.blockedUsers)
+          ? data.blockedUsers
+          : [];
+
+        const isBlocked = blockedUsers.some(
+          (blockedUser) => String(blockedUser?._id) === String(targetUserId),
+        );
+
+        if (isBlocked) {
+          setDmRelationship("blocked");
+          return;
+        }
+
+        /*
+          Do not overwrite a realtime "blocked_by" state that may have
+          arrived while the request was in flight.
+        */
+        setDmRelationship((currentRelationship) => {
+          if (currentRelationship === "blocked_by") {
+            return currentRelationship;
+          }
+
+          if (selectedChat.isFriend === false) {
+            return "unfriended";
+          }
+
+          return "friend";
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to check blocked users:", error);
+        }
+      }
+    };
+
+    loadBlockedState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedChat]);
+
+  /*
+    Close the DM menu when clicking outside it.
+  */
+  useEffect(() => {
+    if (!isDmMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event) => {
+      if (!dmMenuRef.current?.contains(event.target)) {
+        setIsDmMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isDmMenuOpen]);
+
+  /*
+    Main authenticated chat socket.
+  */
   useEffect(() => {
     const token = localStorage.getItem("token");
 
@@ -63,6 +217,124 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       console.log("Chat socket disconnected:", reason);
     });
 
+    /*
+      ============================================================
+      REAL-TIME RELATIONSHIP EVENTS
+      ============================================================
+    */
+
+    /*
+      Current user blocked the other user.
+    */
+    newSocket.on("user_blocked", ({ userId }) => {
+      if (!userId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (
+        !currentChat ||
+        currentChat.type !== "dm" ||
+        String(currentChat.user?._id) !== String(userId)
+      ) {
+        return;
+      }
+
+      setDmRelationship("blocked");
+      setIsDmMenuOpen(false);
+      setRelationshipAction(null);
+      setIsOtherUserTyping(false);
+      setReplyingTo(null);
+      setEditingMessage(null);
+    });
+
+    /*
+      The other user blocked the current user.
+    */
+    newSocket.on("user_blocked_by_other", ({ userId }) => {
+      if (!userId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (
+        !currentChat ||
+        currentChat.type !== "dm" ||
+        String(currentChat.user?._id) !== String(userId)
+      ) {
+        return;
+      }
+
+      setDmRelationship("blocked_by");
+      setIsDmMenuOpen(false);
+      setRelationshipAction(null);
+      setIsOtherUserTyping(false);
+      setReplyingTo(null);
+      setEditingMessage(null);
+    });
+
+    /*
+      Current user unblocked the other user.
+
+      This does NOT restore friendship.
+    */
+    newSocket.on("user_unblocked", ({ userId }) => {
+      if (!userId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (
+        !currentChat ||
+        currentChat.type !== "dm" ||
+        String(currentChat.user?._id) !== String(userId)
+      ) {
+        return;
+      }
+
+      setDmRelationship("unfriended");
+    });
+
+    /*
+      Either side unfriended the other.
+    */
+    newSocket.on("friend_removed", ({ userId }) => {
+      if (!userId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (
+        !currentChat ||
+        currentChat.type !== "dm" ||
+        String(currentChat.user?._id) !== String(userId)
+      ) {
+        return;
+      }
+
+      setDmRelationship((currentRelationship) => {
+        if (
+          currentRelationship === "blocked" ||
+          currentRelationship === "blocked_by"
+        ) {
+          return currentRelationship;
+        }
+
+        return "unfriended";
+      });
+
+      setIsOtherUserTyping(false);
+      setReplyingTo(null);
+      setEditingMessage(null);
+    });
+
+    /*
+      Typing start.
+    */
     newSocket.on("typing_start", ({ userId }) => {
       if (!userId) {
         return;
@@ -81,6 +353,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       setIsOtherUserTyping(true);
     });
 
+    /*
+      Typing stop.
+    */
     newSocket.on("typing_stop", ({ userId }) => {
       if (!userId) {
         return;
@@ -99,6 +374,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       setIsOtherUserTyping(false);
     });
 
+    /*
+      New DM message.
+    */
     newSocket.on("new_message", (newMessage) => {
       if (!newMessage?._id) {
         return;
@@ -189,6 +467,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       });
     });
 
+    /*
+      New Cluster message.
+    */
     newSocket.on("new_cluster_message", ({ clusterId, message }) => {
       if (!message?._id || !clusterId) {
         return;
@@ -248,6 +529,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       });
     });
 
+    /*
+      Message delivered.
+    */
     newSocket.on("message_delivered", ({ messageId }) => {
       if (!messageId) {
         return;
@@ -265,6 +549,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       );
     });
 
+    /*
+      Messages read.
+    */
     newSocket.on("messages_read", ({ messageIds }) => {
       if (!Array.isArray(messageIds) || messageIds.length === 0) {
         return;
@@ -284,6 +571,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       );
     });
 
+    /*
+      Message edited.
+    */
     newSocket.on("message_edited", ({ messageId, content, isEdited }) => {
       if (!messageId) {
         return;
@@ -302,6 +592,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       );
     });
 
+    /*
+      Message unsent.
+    */
     newSocket.on("message_unsent", ({ messageId }) => {
       if (!messageId) {
         return;
@@ -336,6 +629,12 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     };
   }, [user?._id]);
 
+  /*
+    ============================================================
+    CLUSTER SOCKET ROOM
+    ============================================================
+  */
+
   useEffect(() => {
     if (!socket || !selectedChat) {
       return;
@@ -348,8 +647,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     const clusterId = String(selectedChat.cluster._id);
 
     const joinCluster = () => {
-      console.log("[CLUSTER ROOM] Joining:", clusterId);
-
       socket.emit("join_cluster", {
         clusterId,
       });
@@ -365,14 +662,18 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       socket.off("connect", joinCluster);
 
       if (socket.connected) {
-        console.log("[CLUSTER ROOM] Leaving:", clusterId);
-
         socket.emit("leave_cluster", {
           clusterId,
         });
       }
     };
   }, [socket, selectedChat]);
+
+  /*
+    ============================================================
+    TYPING
+    ============================================================
+  */
 
   const stopTyping = () => {
     const currentChat = selectedChatRef.current;
@@ -382,7 +683,8 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       !socket.connected ||
       !currentChat ||
       currentChat.type !== "dm" ||
-      !currentChat.user?._id
+      !currentChat.user?._id ||
+      dmRelationship !== "friend"
     ) {
       return;
     }
@@ -391,6 +693,12 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       recipient: currentChat.user._id,
     });
   };
+
+  /*
+    ============================================================
+    FETCH MESSAGES
+    ============================================================
+  */
 
   useEffect(() => {
     if (!selectedChat) {
@@ -569,12 +877,19 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     };
   }, [selectedChat]);
 
+  /*
+    ============================================================
+    READ RECEIPTS
+    ============================================================
+  */
+
   useEffect(() => {
     if (
       !socket ||
       !socket.connected ||
       !selectedChat ||
       selectedChat.type !== "dm" ||
+      dmRelationship !== "friend" ||
       messages.length === 0
     ) {
       return;
@@ -600,7 +915,13 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     socket.emit("mark_messages_read", {
       senderId,
     });
-  }, [socket, selectedChat, messages]);
+  }, [socket, selectedChat, messages, dmRelationship]);
+
+  /*
+    ============================================================
+    AUTO SCROLL
+    ============================================================
+  */
 
   useEffect(() => {
     if (!shouldAutoScrollRef.current) {
@@ -613,6 +934,12 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       behavior: "smooth",
     });
   }, [messages]);
+
+  /*
+    ============================================================
+    MESSAGE ACTIONS
+    ============================================================
+  */
 
   const handleJumpToMessage = (messageId) => {
     if (!messageId) {
@@ -646,7 +973,7 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
   };
 
   const handleReplyMessage = (message) => {
-    if (!message?._id) {
+    if (!message?._id || isDmRelationshipDisabled) {
       return;
     }
 
@@ -741,6 +1068,159 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
     }
   };
 
+  /*
+    ============================================================
+    DM ACTIONS
+    ============================================================
+  */
+
+  const handleOpenChatProfile = () => {
+    if (!isDM) {
+      return;
+    }
+
+    const userId = selectedChat.user?._id;
+
+    if (!userId) {
+      console.error(
+        "Cannot open profile: selected chat user has no _id.",
+        selectedChat,
+      );
+      return;
+    }
+
+    setIsDmMenuOpen(false);
+
+    if (onOpenProfile) {
+      onOpenProfile(userId);
+    }
+  };
+
+  /*
+    Open the custom Unfriend confirmation modal.
+  */
+  const handleUnfriend = () => {
+    const targetUserId = selectedChat?.user?._id;
+
+    if (!targetUserId || isRelationshipLoading) {
+      return;
+    }
+
+    setIsDmMenuOpen(false);
+    setRelationshipAction("unfriend");
+  };
+
+  /*
+    Open the custom Block confirmation modal.
+  */
+  const handleBlock = () => {
+    const targetUserId = selectedChat?.user?._id;
+
+    if (!targetUserId || isRelationshipLoading) {
+      return;
+    }
+
+    setIsDmMenuOpen(false);
+    setRelationshipAction("block");
+  };
+
+  /*
+    Actually perform the confirmed relationship action.
+  */
+  const handleConfirmRelationshipAction = async () => {
+    const targetUserId = selectedChat?.user?._id;
+
+    if (!targetUserId || isRelationshipLoading || !relationshipAction) {
+      return;
+    }
+
+    setIsRelationshipLoading(true);
+
+    try {
+      const isBlocking = relationshipAction === "block";
+
+      const response = await authFetch(
+        isBlocking
+          ? `http://localhost:5000/api/friends/block/${targetUserId}`
+          : `http://localhost:5000/api/friends/${targetUserId}`,
+        {
+          method: isBlocking ? "POST" : "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(
+          data.message ||
+            (isBlocking ? "Failed to block user" : "Failed to unfriend user"),
+        );
+        return;
+      }
+
+      /*
+        Update immediately rather than waiting for the socket event.
+        The socket event still updates other connected clients.
+      */
+      setDmRelationship(isBlocking ? "blocked" : "unfriended");
+      setRelationshipAction(null);
+      setIsDmMenuOpen(false);
+      setIsOtherUserTyping(false);
+      setReplyingTo(null);
+      setEditingMessage(null);
+    } catch (error) {
+      console.error(
+        isBlocking ? "Failed to block user:" : "Failed to unfriend user:",
+        error,
+      );
+    } finally {
+      setIsRelationshipLoading(false);
+    }
+  };
+
+  const handleUnblock = async () => {
+    const targetUserId = selectedChat?.user?._id;
+
+    if (!targetUserId || isRelationshipLoading) {
+      return;
+    }
+
+    setIsRelationshipLoading(true);
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/friends/block/${targetUserId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to unblock user");
+        return;
+      }
+
+      /*
+        Unblocking does NOT restore friendship.
+      */
+      setDmRelationship("unfriended");
+      setIsDmMenuOpen(false);
+      setIsOtherUserTyping(false);
+    } catch (error) {
+      console.error("Failed to unblock user:", error);
+    } finally {
+      setIsRelationshipLoading(false);
+    }
+  };
+
+  /*
+    ============================================================
+    DERIVED STATE
+    ============================================================
+  */
+
   if (!selectedChat) {
     return (
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
@@ -789,7 +1269,10 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       ? "Public Cluster"
       : "Private Cluster";
 
-  const chatPresence = isDM ? getPresence(selectedChat.user?._id) : null;
+  const chatPresence =
+    isDM && dmRelationship === "friend"
+      ? getPresence(selectedChat.user?._id)
+      : "offline";
 
   const presenceLabel =
     chatPresence === "online"
@@ -805,8 +1288,20 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         ? "bg-amber-400"
         : "bg-stone-400";
 
-  const canMessage = isCluster || selectedChat.isFriend !== false;
+  const canMessage = isCluster || dmRelationship === "friend";
 
+  const isDmBlocked = isDM && dmRelationship === "blocked";
+  const isDmBlockedByOther = isDM && dmRelationship === "blocked_by";
+
+  const isDmRelationshipDisabled =
+    isDM &&
+    (dmRelationship === "unfriended" ||
+      dmRelationship === "blocked" ||
+      dmRelationship === "blocked_by");
+
+  /*
+    Latest read message.
+  */
   let latestReadMessageId = null;
 
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -821,26 +1316,6 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
       break;
     }
   }
-
-  const handleOpenChatProfile = () => {
-    if (!isDM) {
-      return;
-    }
-
-    const userId = selectedChat.user?._id;
-
-    if (!userId) {
-      console.error(
-        "Cannot open profile: selected chat user has no _id.",
-        selectedChat,
-      );
-      return;
-    }
-
-    if (onOpenProfile) {
-      onOpenProfile(userId);
-    }
-  };
 
   return (
     <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
@@ -904,6 +1379,42 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           )}
         </div>
 
+        {isDM && (
+          <div ref={dmMenuRef} className="relative ml-auto">
+            <button
+              type="button"
+              onClick={() => setIsDmMenuOpen((current) => !current)}
+              className={`flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition ${
+                isDmMenuOpen
+                  ? "bg-stone-100 text-chime-text"
+                  : "hover:bg-stone-100 hover:text-chime-text"
+              }`}
+              aria-label="Conversation actions"
+              aria-expanded={isDmMenuOpen}
+            >
+              <MoreVertical size={20} strokeWidth={2} />
+            </button>
+
+            {isDmMenuOpen && (
+              <DmContextMenu
+                user={selectedChat.user}
+                onViewProfile={handleOpenChatProfile}
+                onUnfriend={handleUnfriend}
+                onBlock={handleBlock}
+                onUnblock={handleUnblock}
+                showUnfriend={dmRelationship === "friend"}
+                showBlock={
+                  dmRelationship !== "blocked_by" &&
+                  dmRelationship !== "blocked"
+                }
+                showUnblock={dmRelationship === "blocked"}
+                placement="chat"
+                loading={isRelationshipLoading}
+              />
+            )}
+          </div>
+        )}
+
         {isCluster && (
           <button
             type="button"
@@ -942,7 +1453,11 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
                 {isDM
                   ? canMessage
                     ? "Send a message to start the conversation."
-                    : "You are no longer friends with this user."
+                    : isDmBlocked
+                      ? `You blocked ${chatDisplayName}.`
+                      : isDmBlockedByOther
+                        ? `${chatDisplayName} has blocked you.`
+                        : "You are no longer friends with this user."
                   : "This is the beginning of this Cluster."}
               </p>
             </div>
@@ -1020,7 +1535,9 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
                   messageId={message._id}
                   onUnsend={isOwnMessage ? handleUnsendMessage : undefined}
                   onEdit={isOwnMessage ? handleEditMessage : undefined}
-                  onReply={handleReplyMessage}
+                  onReply={
+                    isDmRelationshipDisabled ? undefined : handleReplyMessage
+                  }
                   replyTo={message.replyTo}
                   onJumpToMessage={handleJumpToMessage}
                   isEdited={message.isEdited}
@@ -1033,7 +1550,7 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         )}
       </div>
 
-      {isDM && isOtherUserTyping && (
+      {isDM && isOtherUserTyping && canMessage && (
         <div className="shrink-0 px-6 pb-1">
           <div className="flex h-7 items-center gap-2 text-xs text-chime-secondary">
             <span>{chatDisplayName} is typing</span>
@@ -1051,12 +1568,19 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
         {isDM && !canMessage ? (
           <div className="border-t border-stone-200 bg-chime-background px-6 py-4 text-center">
             <p className="text-sm font-medium text-chime-secondary">
-              You are no longer friends with {chatDisplayName}.
+              {isDmBlocked
+                ? `You blocked ${chatDisplayName}.`
+                : isDmBlockedByOther
+                  ? `${chatDisplayName} has blocked you.`
+                  : `You are no longer friends with ${chatDisplayName}.`}
             </p>
 
             <p className="mt-1 text-xs text-chime-secondary">
-              Your conversation history is still available, but you cannot send
-              new messages unless you become friends again.
+              {isDmBlocked
+                ? "Your conversation history is still available. Unblock this user from the menu if you want to reconnect."
+                : isDmBlockedByOther
+                  ? "Your conversation history is still available, but you cannot send new messages."
+                  : "Your conversation history is still available, but you cannot send new messages unless you become friends again."}
             </p>
           </div>
         ) : (
@@ -1082,6 +1606,27 @@ function ChatArea({ selectedChat, onOpenProfile, onOpenOwnProfile }) {
           onOpenProfile={onOpenProfile}
         />
       )}
+
+      <ConfirmModal
+        isOpen={relationshipAction !== null}
+        title={
+          relationshipAction === "block" ? "Block user?" : "Unfriend user?"
+        }
+        message={
+          relationshipAction === "block"
+            ? `Are you sure you want to block ${chatDisplayName}? They will also be removed from your friends list and you will no longer be able to message each other.`
+            : `Are you sure you want to unfriend ${chatDisplayName}? You will no longer be able to send messages to each other unless you become friends again.`
+        }
+        confirmText={relationshipAction === "block" ? "Block" : "Unfriend"}
+        cancelText="Cancel"
+        onConfirm={handleConfirmRelationshipAction}
+        onCancel={() => {
+          if (!isRelationshipLoading) {
+            setRelationshipAction(null);
+          }
+        }}
+        loading={isRelationshipLoading}
+      />
     </main>
   );
 }

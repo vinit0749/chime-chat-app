@@ -7,11 +7,11 @@ import cloudinary from "../config/cloudinary.js";
 const router = express.Router();
 
 /*
-  Multer configuration
-
-  Images are kept in memory temporarily and then
-  uploaded directly to Cloudinary.
+  ============================================================
+  MULTER CONFIGURATION
+  ============================================================
 */
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -20,8 +20,11 @@ const upload = multer({
 });
 
 /*
-  Get current user's profile
+  ============================================================
+  GET CURRENT USER'S PROFILE
+  ============================================================
 */
+
 router.get("/me", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select(
@@ -47,8 +50,11 @@ router.get("/me", authMiddleware, async (req, res) => {
 });
 
 /*
-  Update current user's profile
+  ============================================================
+  UPDATE CURRENT USER'S PROFILE
+  ============================================================
 */
+
 router.put("/me", authMiddleware, async (req, res) => {
   try {
     const { username, displayName, bio, status } = req.body;
@@ -61,9 +67,6 @@ router.put("/me", authMiddleware, async (req, res) => {
       });
     }
 
-    /*
-      Track whether the presence status actually changed.
-    */
     const previousStatus = user.status;
 
     /*
@@ -110,7 +113,7 @@ router.put("/me", authMiddleware, async (req, res) => {
     }
 
     /*
-      Manually selected presence status.
+      Presence status
     */
     if (status !== undefined) {
       if (!["online", "away", "invisible"].includes(status)) {
@@ -125,13 +128,10 @@ router.put("/me", authMiddleware, async (req, res) => {
     await user.save();
 
     /*
-      Broadcast the status change immediately.
+      Broadcast status changes immediately.
 
-      server.js exposes the Socket.IO instance through:
-      app.set("io", io)
-
-      This lets REST profile updates notify all connected
-      clients immediately without requiring a refresh.
+      server.js is responsible for applying block privacy
+      when distributing presence to individual users.
     */
     if (status !== undefined && previousStatus !== user.status) {
       const io = req.app.get("io");
@@ -139,26 +139,20 @@ router.put("/me", authMiddleware, async (req, res) => {
       if (io) {
         const sockets = io.sockets.sockets;
 
-        /*
-          Check whether this user currently has an active
-          Socket.IO connection.
-        */
         const isConnected = [...sockets.values()].some(
           (socket) => socket.user?.userId === user._id.toString(),
         );
 
-        /*
-          Calculate the status other users should see.
-
-          Invisible always appears offline.
-          Away/online only appear when actually connected.
-        */
         let effectiveStatus = "offline";
 
         if (isConnected && user.status !== "invisible") {
           effectiveStatus = user.status || "online";
         }
 
+        /*
+          server.js now handles recipient-specific block privacy.
+          This event is kept for compatibility with existing clients.
+        */
         io.emit("presence_update", {
           userId: user._id.toString(),
           status: effectiveStatus,
@@ -187,8 +181,11 @@ router.put("/me", authMiddleware, async (req, res) => {
 });
 
 /*
-  Upload / replace current user's profile picture
+  ============================================================
+  UPLOAD / REPLACE PROFILE PICTURE
+  ============================================================
 */
+
 router.put(
   "/me/profile-picture",
   authMiddleware,
@@ -209,9 +206,6 @@ router.put(
         });
       }
 
-      /*
-        Delete previous Cloudinary image if one exists.
-      */
       if (user.profilePicturePublicId) {
         try {
           await cloudinary.uploader.destroy(user.profilePicturePublicId);
@@ -220,15 +214,11 @@ router.put(
         }
       }
 
-      /*
-        Upload new image to Cloudinary.
-      */
       const uploadResult = await new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: "chime/profile-pictures",
             resource_type: "image",
-
             transformation: [
               {
                 width: 800,
@@ -279,11 +269,11 @@ router.put(
 );
 
 /*
-  Search users
-
-  IMPORTANT:
-  This must come before /:userId.
+  ============================================================
+  SEARCH USERS
+  ============================================================
 */
+
 router.get("/search", authMiddleware, async (req, res) => {
   try {
     const query = req.query.q?.trim();
@@ -308,9 +298,7 @@ router.get("/search", authMiddleware, async (req, res) => {
       _id: {
         $ne: req.user.userId,
       },
-
       isDeleted: false,
-
       username: {
         $regex: query,
         $options: "i",
@@ -353,12 +341,15 @@ router.get("/search", authMiddleware, async (req, res) => {
 });
 
 /*
-  Get another user's public profile
+  ============================================================
+  GET ANOTHER USER'S PUBLIC PROFILE
+  ============================================================
 */
+
 router.get("/:userId", authMiddleware, async (req, res) => {
   try {
     const currentUser = await User.findById(req.user.userId).select(
-      "friends isDeleted",
+      "friends friendRequestsSent friendRequestsReceived blockedUsers isDeleted",
     );
 
     if (!currentUser || currentUser.isDeleted) {
@@ -377,9 +368,43 @@ router.get("/:userId", authMiddleware, async (req, res) => {
       });
     }
 
-    const isFriend = currentUser.friends.some(
-      (friendId) => friendId.toString() === user._id.toString(),
-    );
+    const targetUserId = user._id.toString();
+
+    /*
+      Determine the current relationship.
+
+      Blocked relationships are intentionally treated separately
+      so the profile cannot offer a friend request while blocking
+      is still active.
+    */
+    const isBlocked =
+      currentUser.blockedUsers?.some(
+        (blockedId) => blockedId.toString() === targetUserId,
+      ) || false;
+
+    let relationshipStatus = "none";
+
+    if (isBlocked) {
+      relationshipStatus = "blocked";
+    } else if (
+      currentUser.friends.some(
+        (friendId) => friendId.toString() === targetUserId,
+      )
+    ) {
+      relationshipStatus = "friends";
+    } else if (
+      currentUser.friendRequestsSent.some(
+        (requestId) => requestId.toString() === targetUserId,
+      )
+    ) {
+      relationshipStatus = "sent";
+    } else if (
+      currentUser.friendRequestsReceived.some(
+        (requestId) => requestId.toString() === targetUserId,
+      )
+    ) {
+      relationshipStatus = "received";
+    }
 
     res.json({
       user: {
@@ -389,7 +414,8 @@ router.get("/:userId", authMiddleware, async (req, res) => {
         bio: user.bio,
         profilePicture: user.profilePicture || "",
         status: user.status,
-        isFriend,
+        isFriend: relationshipStatus === "friends",
+        relationshipStatus,
       },
     });
   } catch (error) {
@@ -402,8 +428,11 @@ router.get("/:userId", authMiddleware, async (req, res) => {
 });
 
 /*
-  Delete current account
+  ============================================================
+  DELETE CURRENT ACCOUNT
+  ============================================================
 */
+
 router.delete("/me", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -414,10 +443,6 @@ router.delete("/me", authMiddleware, async (req, res) => {
       });
     }
 
-    /*
-      Delete profile picture from Cloudinary
-      when the account is deleted.
-    */
     if (user.profilePicturePublicId) {
       try {
         await cloudinary.uploader.destroy(user.profilePicturePublicId);

@@ -50,29 +50,11 @@ app.get("/", (req, res) => {
   res.send("Chime backend is running!");
 });
 
-/*
-  ============================================================
-  ONLINE USERS
-  ============================================================
-*/
-
 const onlineUsers = new Map();
-
-/*
-  ============================================================
-  CLUSTER SOCKET ROOM HELPER
-  ============================================================
-*/
 
 const getClusterRoom = (clusterId) => {
   return `cluster:${String(clusterId)}`;
 };
-
-/*
-  ============================================================
-  PRESENCE
-  ============================================================
-*/
 
 const getEffectiveStatus = (user, isConnected) => {
   if (!user || !isConnected) {
@@ -86,33 +68,6 @@ const getEffectiveStatus = (user, isConnected) => {
   return user.status || "online";
 };
 
-/*
-  Check whether either user has blocked the other.
- *
- * This is intentionally symmetric:
- *
- * A blocked B
- * OR
- * B blocked A
- *
- * means A must see B as offline.
- */
-const areUsersBlocked = (currentUser, targetUserId) => {
-  if (!currentUser || !targetUserId) {
-    return false;
-  }
-
-  const normalizedTargetId = String(targetUserId);
-
-  return (currentUser.blockedUsers || []).some(
-    (blockedId) => String(blockedId) === normalizedTargetId,
-  );
-};
-
-/*
-  Get whether the relationship between two users is blocked
-  in either direction.
- */
 const isBlockedRelationship = (userA, userB) => {
   if (!userA || !userB) {
     return false;
@@ -132,16 +87,6 @@ const isBlockedRelationship = (userA, userB) => {
   return aBlockedB || bBlockedA;
 };
 
-/*
-  Broadcast a user's presence while respecting block privacy.
-
-  IMPORTANT:
-  We do NOT use io.emit() here.
-
-  Every connected recipient gets their own presence value:
-  - normal relationship -> actual status
-  - blocked relationship -> offline
-*/
 const broadcastPresence = async (userId) => {
   try {
     const normalizedUserId = String(userId);
@@ -159,12 +104,6 @@ const broadcastPresence = async (userId) => {
 
     const actualStatus = getEffectiveStatus(user, isConnected);
 
-    /*
-      Get every currently connected user.
-
-      We fetch their blockedUsers in one query so we can determine
-      the relationship without performing one DB query per socket.
-    */
     const onlineUserIds = Array.from(onlineUsers.entries())
       .filter(([, userSockets]) => userSockets && userSockets.size > 0)
       .map(([connectedUserId]) => connectedUserId);
@@ -187,9 +126,6 @@ const broadcastPresence = async (userId) => {
       ]),
     );
 
-    /*
-      Send the presence separately to every connected user.
-    */
     for (const recipientId of onlineUserIds) {
       const recipientSockets = onlineUsers.get(recipientId);
 
@@ -221,12 +157,6 @@ const isUserOnline = (userId) => {
   return Boolean(sockets && sockets.size > 0);
 };
 
-/*
-  ============================================================
-  REAL-TIME USER EVENT HELPER
-  ============================================================
-*/
-
 const emitToUser = (userId, event, data) => {
   const sockets = onlineUsers.get(String(userId));
 
@@ -240,12 +170,6 @@ const emitToUser = (userId, event, data) => {
 };
 
 app.set("emitToUser", emitToUser);
-
-/*
-  ============================================================
-  SOCKET AUTHENTICATION
-  ============================================================
-*/
 
 io.use((socket, next) => {
   try {
@@ -265,13 +189,7 @@ io.use((socket, next) => {
   }
 });
 
-/*
-  ============================================================
-  SOCKET CONNECTION
-  ============================================================
-*/
-
-io.on("connection", async (socket) => {
+io.on("connection", (socket) => {
   const userId = String(socket.user.userId);
 
   if (!onlineUsers.has(userId)) {
@@ -282,106 +200,9 @@ io.on("connection", async (socket) => {
 
   socket.clusterRooms = new Set();
 
-  /*
-    Broadcast this user's presence.
-
-    This now automatically respects blocking for every recipient.
-  */
-  await broadcastPresence(userId);
-
-  /*
-    ==========================================================
-    SEND EXISTING ONLINE USERS
-    ==========================================================
-  */
-
-  /*
-    Load the newly connected user's current block list once.
-    This allows us to determine whether each existing online user
-    should appear online or offline.
-  */
-  const currentUser = await User.findById(userId).select("_id blockedUsers");
-
-  for (const [onlineUserId, sockets] of onlineUsers.entries()) {
-    if (onlineUserId === userId || sockets.size === 0) {
-      continue;
-    }
-
-    try {
-      const onlineUser = await User.findById(onlineUserId).select(
-        "_id status isDeleted blockedUsers",
-      );
-
-      if (!onlineUser || onlineUser.isDeleted) {
-        continue;
-      }
-
-      const blockedRelationship = isBlockedRelationship(
-        currentUser,
-        onlineUser,
-      );
-
-      socket.emit("presence_update", {
-        userId: onlineUserId,
-        status: blockedRelationship
-          ? "offline"
-          : getEffectiveStatus(onlineUser, true),
-      });
-    } catch (error) {
-      console.error("Failed to send existing presence:", error);
-    }
-  }
-
-  /*
-    ==========================================================
-    STATUS CHANGED
-    ==========================================================
-  */
-
   socket.on("status_changed", async () => {
     await broadcastPresence(userId);
   });
-
-  /*
-    ==========================================================
-    MESSAGE DELIVERY
-    ==========================================================
-  */
-
-  try {
-    const pendingMessages = await Message.find({
-      recipient: userId,
-      status: "sent",
-    }).select("_id sender");
-
-    if (pendingMessages.length > 0) {
-      await Message.updateMany(
-        {
-          recipient: userId,
-          status: "sent",
-        },
-        {
-          $set: {
-            status: "delivered",
-          },
-        },
-      );
-
-      for (const message of pendingMessages) {
-        emitToUser(message.sender.toString(), "message_delivered", {
-          messageId: message._id.toString(),
-        });
-      }
-    }
-  } catch (error) {
-    console.error("Failed to update pending message delivery:", error);
-  }
-
-  /*
-    ============================================================
-    MARK DIRECT MESSAGES READ
-    ============================================================
-  */
 
   socket.on("mark_messages_read", async (data) => {
     try {
@@ -429,12 +250,6 @@ io.on("connection", async (socket) => {
     }
   });
 
-  /*
-    ============================================================
-    DIRECT MESSAGE TYPING
-    ============================================================
-  */
-
   socket.on("typing_start", async (data) => {
     try {
       const { recipient } = data || {};
@@ -456,9 +271,6 @@ io.on("connection", async (socket) => {
         return;
       }
 
-      /*
-        Do not allow typing indicators across a blocked relationship.
-      */
       const [currentUser, targetUser] = await Promise.all([
         User.findById(userId).select("blockedUsers"),
         User.findById(recipientId).select("blockedUsers"),
@@ -546,12 +358,6 @@ io.on("connection", async (socket) => {
     }
   });
 
-  /*
-    ============================================================
-    JOIN CLUSTER
-    ============================================================
-  */
-
   socket.on("join_cluster", async (data) => {
     try {
       const { clusterId } = data || {};
@@ -621,12 +427,6 @@ io.on("connection", async (socket) => {
     }
   });
 
-  /*
-    ============================================================
-    LEAVE CLUSTER
-    ============================================================
-  */
-
   socket.on("leave_cluster", async (data) => {
     try {
       const { clusterId } = data || {};
@@ -659,12 +459,6 @@ io.on("connection", async (socket) => {
     }
   });
 
-  /*
-    ============================================================
-    CLUSTER TYPING START
-    ============================================================
-  */
-
   socket.on("cluster_typing_start", async (data) => {
     try {
       const { clusterId } = data || {};
@@ -696,12 +490,6 @@ io.on("connection", async (socket) => {
     }
   });
 
-  /*
-    ============================================================
-    CLUSTER TYPING STOP
-    ============================================================
-  */
-
   socket.on("cluster_typing_stop", async (data) => {
     try {
       const { clusterId } = data || {};
@@ -732,12 +520,6 @@ io.on("connection", async (socket) => {
       console.error("Cluster typing stop error:", error);
     }
   });
-
-  /*
-    ============================================================
-    SEND CLUSTER MESSAGE
-    ============================================================
-  */
 
   socket.on("send_cluster_message", async (data) => {
     try {
@@ -849,12 +631,6 @@ io.on("connection", async (socket) => {
     }
   });
 
-  /*
-    ============================================================
-    SEND DIRECT MESSAGE
-    ============================================================
-  */
-
   socket.on("send_message", async (data) => {
     try {
       const { content, recipient, replyTo } = data || {};
@@ -885,12 +661,6 @@ io.on("connection", async (socket) => {
         return;
       }
 
-      /*
-        ======================================================
-        BLOCK CHECK
-        ======================================================
-      */
-
       const senderHasBlockedRecipient = sender.blockedUsers.some(
         (blockedId) => String(blockedId) === recipientId,
       );
@@ -906,12 +676,6 @@ io.on("connection", async (socket) => {
 
         return;
       }
-
-      /*
-        ======================================================
-        FRIENDSHIP CHECK
-        ======================================================
-      */
 
       const friendship = await Friendship.findOne({
         status: "accepted",
@@ -1022,11 +786,374 @@ io.on("connection", async (socket) => {
     }
   });
 
-  /*
-    ============================================================
-    DISCONNECT
-    ============================================================
-  */
+  socket.on("send_cluster_invitation", async (data, callback) => {
+    const respond = (response) => {
+      if (typeof callback === "function") {
+        callback(response);
+      }
+    };
+
+    try {
+      const { clusterId, recipient } = data || {};
+
+      if (!clusterId || !recipient) {
+        return respond({
+          ok: false,
+          message: "Cluster and recipient are required",
+        });
+      }
+
+      if (
+        !mongoose.Types.ObjectId.isValid(clusterId) ||
+        !mongoose.Types.ObjectId.isValid(recipient)
+      ) {
+        return respond({
+          ok: false,
+          message: "Invalid Cluster or recipient ID",
+        });
+      }
+
+      const recipientId = String(recipient);
+
+      if (recipientId === userId) {
+        return respond({
+          ok: false,
+          message: "You cannot invite yourself",
+        });
+      }
+
+      const [sender, recipientUser, cluster] = await Promise.all([
+        User.findById(userId),
+        User.findById(recipientId),
+        Cluster.findOne({
+          _id: clusterId,
+          isDeleted: false,
+        }),
+      ]);
+
+      if (!sender || sender.isDeleted) {
+        return respond({
+          ok: false,
+          message: "User no longer exists",
+        });
+      }
+
+      if (!recipientUser || recipientUser.isDeleted) {
+        return respond({
+          ok: false,
+          message: "User not found",
+        });
+      }
+
+      if (!cluster) {
+        return respond({
+          ok: false,
+          message: "Cluster not found",
+        });
+      }
+
+      if (cluster.visibility !== "private") {
+        return respond({
+          ok: false,
+          message: "Invitations are only available for private Clusters",
+        });
+      }
+
+      if (String(cluster.owner) !== userId) {
+        return respond({
+          ok: false,
+          message: "Only the Cluster owner can send invitations",
+        });
+      }
+
+      const blockedRelationship =
+        sender.blockedUsers.some(
+          (blockedId) => String(blockedId) === recipientId,
+        ) ||
+        recipientUser.blockedUsers.some(
+          (blockedId) => String(blockedId) === userId,
+        );
+
+      if (blockedRelationship) {
+        return respond({
+          ok: false,
+          message: "You cannot invite this user",
+        });
+      }
+
+      const friendship = await Friendship.findOne({
+        status: "accepted",
+        $or: [
+          {
+            requester: userId,
+            recipient: recipientId,
+          },
+          {
+            requester: recipientId,
+            recipient: userId,
+          },
+        ],
+      });
+
+      if (!friendship) {
+        return respond({
+          ok: false,
+          message: "You can only invite your friends",
+        });
+      }
+
+      const existingMembership = await ClusterMember.findOne({
+        cluster: clusterId,
+        user: recipientId,
+      });
+
+      if (existingMembership?.status === "active") {
+        return respond({
+          ok: false,
+          message: "This user is already a Cluster member",
+        });
+      }
+
+      const existingInvitation = await Message.findOne({
+        sender: userId,
+        recipient: recipientId,
+        cluster: null,
+        messageType: "cluster_invite",
+        "clusterInvite.cluster": clusterId,
+        "clusterInvite.status": "pending",
+      });
+
+      if (existingInvitation) {
+        return respond({
+          ok: false,
+          message: "An invitation is already pending",
+        });
+      }
+
+      const conversation = await getOrCreateConversation(userId, recipientId);
+
+      const deliveryStatus = isUserOnline(recipientId) ? "delivered" : "sent";
+
+      const message = await Message.create({
+        sender: userId,
+        senderUsername: sender.username,
+        recipient: recipientId,
+        cluster: null,
+        content: cluster.name,
+        messageType: "cluster_invite",
+        clusterInvite: {
+          cluster: cluster._id,
+          status: "pending",
+        },
+        status: deliveryStatus,
+      });
+
+      await message.populate("sender", "username displayName profilePicture");
+
+      await message.populate(
+        "recipient",
+        "username displayName profilePicture",
+      );
+
+      await message.populate(
+        "clusterInvite.cluster",
+        "name description profilePicture visibility owner",
+      );
+
+      conversation.lastMessage = message._id;
+      conversation.lastMessageAt = message.createdAt;
+
+      await conversation.save();
+
+      emitToUser(userId, "new_message", message);
+
+      if (deliveryStatus === "delivered") {
+        emitToUser(recipientId, "new_message", message);
+      }
+
+      const conversationUpdate = {
+        conversationId: conversation._id.toString(),
+        userId: recipientId,
+        lastMessage: {
+          _id: message._id.toString(),
+          content: message.content,
+          createdAt: message.createdAt,
+        },
+      };
+
+      emitToUser(userId, "conversation_updated", conversationUpdate);
+
+      emitToUser(recipientId, "conversation_updated", {
+        ...conversationUpdate,
+        userId,
+      });
+
+      respond({
+        ok: true,
+        message: "Cluster invitation sent",
+        invitation: message,
+      });
+    } catch (error) {
+      console.error("Cluster invitation error:", error);
+
+      respond({
+        ok: false,
+        message: "Failed to send Cluster invitation",
+      });
+    }
+  });
+
+  socket.on("cluster_invitation_response", async (data) => {
+    try {
+      const { messageId, action } = data || {};
+
+      if (!messageId || !["accept", "reject"].includes(action)) {
+        return socket.emit("cluster_invitation_error", {
+          message: "Invalid invitation response",
+        });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        return socket.emit("cluster_invitation_error", {
+          message: "Invalid invitation ID",
+        });
+      }
+
+      const invitation = await Message.findOne({
+        _id: messageId,
+        recipient: userId,
+        cluster: null,
+        messageType: "cluster_invite",
+      });
+
+      if (!invitation) {
+        return socket.emit("cluster_invitation_error", {
+          message: "Invitation not found",
+        });
+      }
+
+      if (invitation.clusterInvite?.status !== "pending") {
+        return socket.emit("cluster_invitation_error", {
+          message: "This invitation has already been handled",
+        });
+      }
+
+      const clusterId = invitation.clusterInvite.cluster;
+
+      const cluster = await Cluster.findOne({
+        _id: clusterId,
+        visibility: "private",
+        isDeleted: false,
+      });
+
+      if (!cluster) {
+        invitation.clusterInvite.status = "rejected";
+        await invitation.save();
+
+        emitToUser(invitation.sender.toString(), "cluster_invitation_updated", {
+          messageId: invitation._id.toString(),
+          status: "rejected",
+        });
+
+        return socket.emit("cluster_invitation_updated", {
+          messageId: invitation._id.toString(),
+          status: "rejected",
+        });
+      }
+
+      if (action === "accept") {
+        const membership = await ClusterMember.findOne({
+          cluster: clusterId,
+          user: userId,
+        });
+
+        if (membership) {
+          membership.status = "active";
+          membership.role = "member";
+          await membership.save();
+        } else {
+          await ClusterMember.create({
+            cluster: clusterId,
+            user: userId,
+            status: "active",
+            role: "member",
+          });
+        }
+
+        invitation.clusterInvite.status = "accepted";
+        invitation.status = "read";
+
+        await invitation.save();
+
+        const [updatedCluster, memberCount] = await Promise.all([
+          Cluster.findById(cluster._id).populate(
+            "owner",
+            "username displayName profilePicture",
+          ),
+          ClusterMember.countDocuments({
+            cluster: cluster._id,
+            status: "active",
+          }),
+        ]);
+
+        const clusterPayload = {
+          _id: updatedCluster._id,
+          name: updatedCluster.name,
+          description: updatedCluster.description,
+          profilePicture: updatedCluster.profilePicture || "",
+          visibility: updatedCluster.visibility,
+          inviteCode:
+            updatedCluster.visibility === "private"
+              ? updatedCluster.inviteCode || ""
+              : "",
+          owner: updatedCluster.owner,
+          memberCount,
+          createdAt: updatedCluster.createdAt,
+        };
+
+        emitToUser(userId, "cluster_joined_realtime", {
+          cluster: clusterPayload,
+        });
+
+        emitToUser(cluster.owner.toString(), "cluster_member_joined", {
+          clusterId: cluster._id.toString(),
+          userId,
+          cluster: clusterPayload,
+        });
+
+        emitToUser(invitation.sender.toString(), "cluster_invitation_updated", {
+          messageId: invitation._id.toString(),
+          status: "accepted",
+        });
+
+        return socket.emit("cluster_invitation_updated", {
+          messageId: invitation._id.toString(),
+          status: "accepted",
+          cluster: clusterPayload,
+        });
+      }
+
+      invitation.clusterInvite.status = "rejected";
+
+      await invitation.save();
+
+      emitToUser(invitation.sender.toString(), "cluster_invitation_updated", {
+        messageId: invitation._id.toString(),
+        status: "rejected",
+      });
+
+      socket.emit("cluster_invitation_updated", {
+        messageId: invitation._id.toString(),
+        status: "rejected",
+      });
+    } catch (error) {
+      console.error("Cluster invitation response error:", error);
+
+      socket.emit("cluster_invitation_error", {
+        message: "Failed to respond to Cluster invitation",
+      });
+    }
+  });
 
   socket.on("disconnect", async () => {
     if (socket.clusterRooms) {
@@ -1052,13 +1179,72 @@ io.on("connection", async (socket) => {
 
     await broadcastPresence(userId);
   });
-});
 
-/*
-  ============================================================
-  DATABASE + SERVER
-  ============================================================
-*/
+  (async () => {
+    await broadcastPresence(userId);
+
+    const currentUser = await User.findById(userId).select("_id blockedUsers");
+
+    for (const [onlineUserId, sockets] of onlineUsers.entries()) {
+      if (onlineUserId === userId || sockets.size === 0) {
+        continue;
+      }
+
+      try {
+        const onlineUser = await User.findById(onlineUserId).select(
+          "_id status isDeleted blockedUsers",
+        );
+
+        if (!onlineUser || onlineUser.isDeleted) {
+          continue;
+        }
+
+        const blockedRelationship = isBlockedRelationship(
+          currentUser,
+          onlineUser,
+        );
+
+        socket.emit("presence_update", {
+          userId: onlineUserId,
+          status: blockedRelationship
+            ? "offline"
+            : getEffectiveStatus(onlineUser, true),
+        });
+      } catch (error) {
+        console.error("Failed to send existing presence:", error);
+      }
+    }
+
+    try {
+      const pendingMessages = await Message.find({
+        recipient: userId,
+        status: "sent",
+      }).select("_id sender");
+
+      if (pendingMessages.length > 0) {
+        await Message.updateMany(
+          {
+            recipient: userId,
+            status: "sent",
+          },
+          {
+            $set: {
+              status: "delivered",
+            },
+          },
+        );
+
+        for (const message of pendingMessages) {
+          emitToUser(message.sender.toString(), "message_delivered", {
+            messageId: message._id.toString(),
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Failed to update pending message delivery:", error);
+    }
+  })();
+});
 
 connectDB();
 

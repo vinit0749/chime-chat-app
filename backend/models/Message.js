@@ -38,6 +38,41 @@ const messageSchema = new mongoose.Schema(
       default: null,
     },
 
+    /*
+      Message type.
+
+      text:
+      Normal chat message.
+
+      cluster_invite:
+      Invitation to join a private Cluster.
+    */
+    messageType: {
+      type: String,
+      enum: ["text", "cluster_invite"],
+      default: "text",
+      required: true,
+    },
+
+    /*
+      Cluster invitation details.
+
+      Used only when messageType is cluster_invite.
+    */
+    clusterInvite: {
+      cluster: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Cluster",
+        default: null,
+      },
+
+      status: {
+        type: String,
+        enum: ["pending", "accepted", "rejected"],
+        default: "pending",
+      },
+    },
+
     content: {
       type: String,
       required: true,

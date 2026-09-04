@@ -344,6 +344,10 @@ export const getDirectMessages = async (req, res) => {
       .populate("sender", "username displayName profilePicture")
       .populate("recipient", "username displayName profilePicture")
       .populate({
+        path: "clusterInvite.cluster",
+        select: "name description profilePicture visibility owner",
+      })
+      .populate({
         path: "replyTo",
         select: "content sender senderUsername createdAt",
         populate: {

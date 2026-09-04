@@ -22,11 +22,27 @@ const clusterSchema = new mongoose.Schema(
       trim: true,
     },
 
+    profilePicturePublicId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     visibility: {
       type: String,
       enum: ["public", "private"],
       default: "public",
       required: true,
+    },
+
+    inviteCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      uppercase: true,
+      trim: true,
+      minlength: 10,
+      maxlength: 10,
     },
 
     owner: {

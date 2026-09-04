@@ -1,17 +1,26 @@
 import express from "express";
 
+import multer from "multer";
+
 import {
   createCluster,
   getPublicClusters,
   getMyClusters,
   getClusterMembers,
+  addClusterMember,
   joinPublicCluster,
+  joinPrivateCluster,
   leaveCluster,
   requestToJoinCluster,
   getClusterJoinRequests,
   approveClusterJoinRequest,
   rejectClusterJoinRequest,
   getMyClusterRequests,
+  updateCluster,
+  uploadClusterProfilePicture,
+  transferClusterOwnership,
+  kickClusterMember,
+  deleteCluster,
 } from "../controllers/clusterController.js";
 
 import { getClusterMessages } from "../controllers/messageController.js";
@@ -20,103 +29,61 @@ import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-/*
-  ============================================================
-  CREATE CLUSTER
-  ============================================================
-*/
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+});
 
 router.post("/", authMiddleware, createCluster);
 
-/*
-  ============================================================
-  DISCOVER PUBLIC CLUSTERS
-  ============================================================
-*/
-
 router.get("/public", authMiddleware, getPublicClusters);
-
-/*
-  ============================================================
-  GET MY CLUSTERS
-  ============================================================
-*/
 
 router.get("/mine", authMiddleware, getMyClusters);
 
-/*
-  ============================================================
-  GET MY PENDING JOIN REQUESTS
-  ============================================================
-*/
-
 router.get("/requests/mine", authMiddleware, getMyClusterRequests);
 
-/*
-  ============================================================
-  GET CLUSTER MESSAGES
-  ============================================================
-*/
+router.patch("/:clusterId", authMiddleware, updateCluster);
+
+router.put(
+  "/:clusterId/profile-picture",
+  authMiddleware,
+  upload.single("profilePicture"),
+  uploadClusterProfilePicture,
+);
+
+router.patch(
+  "/:clusterId/ownership/:userId",
+  authMiddleware,
+  transferClusterOwnership,
+);
+
+router.post("/:clusterId/members/:userId", authMiddleware, addClusterMember);
+
+router.delete("/:clusterId/members/:userId", authMiddleware, kickClusterMember);
+
+router.delete("/:clusterId", authMiddleware, deleteCluster);
 
 router.get("/:clusterId/messages", authMiddleware, getClusterMessages);
 
-/*
-  ============================================================
-  GET CLUSTER MEMBERS
-  ============================================================
-*/
-
 router.get("/:clusterId/members", authMiddleware, getClusterMembers);
-
-/*
-  ============================================================
-  JOIN PUBLIC CLUSTER
-  ============================================================
-*/
 
 router.post("/:clusterId/join", authMiddleware, joinPublicCluster);
 
-/*
-  ============================================================
-  REQUEST TO JOIN PRIVATE CLUSTER
-  ============================================================
-*/
+router.post("/join-private", authMiddleware, joinPrivateCluster);
 
 router.post("/:clusterId/request", authMiddleware, requestToJoinCluster);
 
-/*
-  ============================================================
-  LEAVE CLUSTER
-  ============================================================
-*/
-
 router.delete("/:clusterId/leave", authMiddleware, leaveCluster);
 
-/*
-  ============================================================
-  GET PRIVATE CLUSTER JOIN REQUESTS
-  ============================================================
-*/
-
 router.get("/:clusterId/requests", authMiddleware, getClusterJoinRequests);
-
-/*
-  ============================================================
-  APPROVE PRIVATE CLUSTER JOIN REQUEST
-  ============================================================
-*/
 
 router.patch(
   "/:clusterId/requests/:userId/approve",
   authMiddleware,
   approveClusterJoinRequest,
 );
-
-/*
-  ============================================================
-  REJECT PRIVATE CLUSTER JOIN REQUEST
-  ============================================================
-*/
 
 router.delete(
   "/:clusterId/requests/:userId/reject",

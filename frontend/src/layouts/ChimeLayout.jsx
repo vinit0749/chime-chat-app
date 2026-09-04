@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 
-import Sidebar from "../components/Sidebar";
-import ChatArea from "../components/ChatArea";
+import Sidebar from "../components/Sidebar/Sidebar";
+import ChatArea from "../components/ChatArea/ChatArea";
 import Friends from "../components/Friends";
 import Profile from "../components/Profile";
 import PublicProfile from "../components/PublicProfile";
@@ -14,6 +14,7 @@ function ChimeLayout() {
   const [selectedChat, setSelectedChat] = useState(null);
   const [activeView, setActiveView] = useState("chat");
   const [profileUserId, setProfileUserId] = useState(null);
+  const [clusterMenuAction, setClusterMenuAction] = useState(null);
 
   useEffect(() => {
     if (!selectedChat || selectedChat.type !== "dm") {
@@ -66,6 +67,7 @@ function ChimeLayout() {
   }, [selectedChat?.type, selectedChat?.user?._id]);
 
   const handleSelectChat = (chat) => {
+    setClusterMenuAction(null);
     setSelectedChat(chat);
     setProfileUserId(null);
     setActiveView("chat");
@@ -77,6 +79,7 @@ function ChimeLayout() {
       return;
     }
 
+    setClusterMenuAction(null);
     setSelectedChat({
       type: "cluster",
       cluster,
@@ -86,7 +89,116 @@ function ChimeLayout() {
     setIsSidebarOpen(false);
   };
 
+  const handleClusterUpdated = useCallback((updatedCluster) => {
+    if (!updatedCluster?._id) {
+      return;
+    }
+
+    setSelectedChat((currentChat) => {
+      if (
+        !currentChat ||
+        currentChat.type !== "cluster" ||
+        String(currentChat.cluster?._id) !== String(updatedCluster._id)
+      ) {
+        return currentChat;
+      }
+
+      return {
+        ...currentChat,
+        cluster: {
+          ...currentChat.cluster,
+          ...updatedCluster,
+        },
+      };
+    });
+  }, []);
+
+  const handleClusterDeleted = (clusterId) => {
+    if (!clusterId) {
+      return;
+    }
+
+    setClusterMenuAction(null);
+
+    setSelectedChat((currentChat) => {
+      if (
+        !currentChat ||
+        currentChat.type !== "cluster" ||
+        String(currentChat.cluster?._id) !== String(clusterId)
+      ) {
+        return currentChat;
+      }
+
+      return null;
+    });
+
+    setActiveView("chat");
+  };
+
+  const handleClusterLeft = useCallback((clusterId) => {
+    if (!clusterId) {
+      return;
+    }
+
+    setClusterMenuAction(null);
+
+    setSelectedChat((currentChat) => {
+      if (
+        !currentChat ||
+        currentChat.type !== "cluster" ||
+        String(currentChat.cluster?._id) !== String(clusterId)
+      ) {
+        return currentChat;
+      }
+
+      return null;
+    });
+
+    setActiveView("chat");
+  }, []);
+
+  const handleClusterMenuAction = (action, cluster) => {
+    if (!cluster?._id) {
+      return;
+    }
+
+    setSelectedChat((currentChat) => {
+      if (
+        !currentChat ||
+        currentChat.type !== "cluster" ||
+        String(currentChat.cluster?._id) !== String(cluster._id)
+      ) {
+        return {
+          type: "cluster",
+          cluster,
+        };
+      }
+
+      return {
+        ...currentChat,
+        cluster: {
+          ...currentChat.cluster,
+          ...cluster,
+        },
+      };
+    });
+
+    setActiveView("chat");
+    setProfileUserId(null);
+    setIsSidebarOpen(false);
+
+    setClusterMenuAction({
+      action,
+      clusterId: String(cluster._id),
+    });
+  };
+
+  const handleClusterMenuActionHandled = useCallback(() => {
+    setClusterMenuAction(null);
+  }, []);
+
   const handleDiscoverClusters = () => {
+    setClusterMenuAction(null);
     setSelectedChat(null);
     setProfileUserId(null);
     setActiveView("discover");
@@ -94,6 +206,7 @@ function ChimeLayout() {
   };
 
   const handleOpenFriends = () => {
+    setClusterMenuAction(null);
     setSelectedChat(null);
     setProfileUserId(null);
     setActiveView("friends");
@@ -101,6 +214,7 @@ function ChimeLayout() {
   };
 
   const handleOpenProfile = () => {
+    setClusterMenuAction(null);
     setSelectedChat(null);
     setProfileUserId(null);
     setActiveView("profile");
@@ -115,6 +229,7 @@ function ChimeLayout() {
       return;
     }
 
+    setClusterMenuAction(null);
     setSelectedChat(null);
     setProfileUserId(actualUserId);
     setActiveView("public-profile");
@@ -126,6 +241,7 @@ function ChimeLayout() {
       return;
     }
 
+    setClusterMenuAction(null);
     setSelectedChat({
       type: "dm",
       user,
@@ -151,6 +267,9 @@ function ChimeLayout() {
         onOpenFriendRequests={handleOpenFriends}
         onOpenProfile={handleOpenProfile}
         onOpenUserProfile={handleOpenUserProfile}
+        onClusterUpdated={handleClusterUpdated}
+        onClusterDeleted={handleClusterDeleted}
+        onClusterMenuAction={handleClusterMenuAction}
         activeView={activeView}
       />
 
@@ -171,6 +290,9 @@ function ChimeLayout() {
               onOpenFriendRequests={handleOpenFriends}
               onOpenProfile={handleOpenProfile}
               onOpenUserProfile={handleOpenUserProfile}
+              onClusterUpdated={handleClusterUpdated}
+              onClusterDeleted={handleClusterDeleted}
+              onClusterMenuAction={handleClusterMenuAction}
               activeView={activeView}
             />
           </div>
@@ -210,6 +332,12 @@ function ChimeLayout() {
             selectedChat={selectedChat}
             onOpenProfile={handleOpenUserProfile}
             onOpenOwnProfile={handleOpenProfile}
+            onSelectChat={handleSelectChat}
+            onClusterUpdated={handleClusterUpdated}
+            onClusterDeleted={handleClusterDeleted}
+            onClusterLeft={handleClusterLeft}
+            clusterMenuAction={clusterMenuAction}
+            onClusterMenuActionHandled={handleClusterMenuActionHandled}
           />
         )}
       </main>

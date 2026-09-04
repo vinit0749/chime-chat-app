@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { X, Globe, Lock, Compass, ArrowRight, Users } from "lucide-react";
+import {
+  X,
+  Globe,
+  Lock,
+  Compass,
+  ArrowRight,
+  Users,
+  Check,
+} from "lucide-react";
 import { authFetch } from "../utils/authFetch";
 
 function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
@@ -12,6 +20,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
 
   const [loading, setLoading] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
   const [error, setError] = useState("");
 
   if (!isOpen) {
@@ -28,6 +37,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
     setVisibility("public");
     setInviteCode("");
     setError("");
+    setRequestSent(false);
     setMode("create");
 
     onClose();
@@ -38,6 +48,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
 
     setMode(nextMode);
     setError("");
+    setRequestSent(false);
   };
 
   const handleSubmit = async (event) => {
@@ -89,7 +100,9 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
   const handleJoin = async (event) => {
     event.preventDefault();
 
-    if (!inviteCode.trim()) {
+    const normalizedInviteCode = inviteCode.trim().toUpperCase();
+
+    if (!normalizedInviteCode) {
       setError("Enter a Cluster invite code.");
       return;
     }
@@ -99,14 +112,14 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
 
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/clusters/join",
+        "http://localhost:5000/api/clusters/join-private",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            inviteCode: inviteCode.trim(),
+            inviteCode: normalizedInviteCode,
           }),
         },
       );
@@ -114,17 +127,14 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Failed to join Cluster.");
+        setError(data.message || "Failed to send join request.");
         return;
       }
 
-      onCreated(data.cluster);
-
-      setInviteCode("");
-      setError("");
-      onClose();
+      setInviteCode(normalizedInviteCode);
+      setRequestSent(true);
     } catch (error) {
-      console.error("Failed to join Cluster:", error);
+      console.error("Failed to send Cluster join request:", error);
       setError("Something went wrong. Please try again.");
     } finally {
       setJoining(false);
@@ -132,7 +142,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
   };
 
   const handleDiscover = () => {
-    if (isBusy || !onOpenDiscover) return;
+    if (isBusy || requestSent || !onOpenDiscover) return;
 
     onClose();
     onOpenDiscover();
@@ -365,50 +375,57 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
               <section className="rounded-xl border border-stone-200 bg-chime-chat p-5">
                 <div className="flex items-start gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-chime-text">
-                    <Lock size={18} />
+                    {requestSent ? <Check size={18} /> : <Lock size={18} />}
                   </div>
 
                   <div className="min-w-0">
                     <h4 className="text-sm font-bold text-chime-text">
-                      Have an invite?
+                      {requestSent ? "Request sent" : "Have an invite?"}
                     </h4>
 
                     <p className="mt-1 text-xs leading-5 text-chime-secondary">
-                      Enter the code shared by a Cluster owner or member.
+                      {requestSent
+                        ? "Your request has been sent to the Cluster owner. You'll join once they approve it."
+                        : "Enter the code shared by a Cluster owner or member."}
                     </p>
                   </div>
                 </div>
 
-                <form onSubmit={handleJoin} className="mt-5">
-                  <label
-                    htmlFor="cluster-invite-code"
-                    className="mb-2 block text-sm font-semibold text-chime-text"
-                  >
-                    Invite code
-                  </label>
-
-                  <div className="flex gap-2.5">
-                    <input
-                      id="cluster-invite-code"
-                      type="text"
-                      value={inviteCode}
-                      onChange={(event) => setInviteCode(event.target.value)}
-                      placeholder="Enter invite code"
-                      className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 bg-chime-background px-4 text-sm text-chime-text outline-none transition placeholder:text-chime-secondary focus:border-chime-gold focus:ring-2 focus:ring-chime-gold/10"
-                      disabled={joining}
-                      autoFocus
-                    />
-
-                    <button
-                      type="submit"
-                      disabled={joining}
-                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-chime-gold px-5 text-sm font-bold text-chime-text transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                {!requestSent && (
+                  <form onSubmit={handleJoin} className="mt-5">
+                    <label
+                      htmlFor="cluster-invite-code"
+                      className="mb-2 block text-sm font-semibold text-chime-text"
                     >
-                      {joining ? "Joining..." : "Join"}
-                      {!joining && <ArrowRight size={16} />}
-                    </button>
-                  </div>
-                </form>
+                      Invite code
+                    </label>
+
+                    <div className="flex gap-2.5">
+                      <input
+                        id="cluster-invite-code"
+                        type="text"
+                        value={inviteCode}
+                        onChange={(event) =>
+                          setInviteCode(event.target.value.toUpperCase())
+                        }
+                        maxLength={10}
+                        placeholder="Enter invite code"
+                        className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 bg-chime-background px-4 text-sm font-mono text-chime-text outline-none transition placeholder:text-chime-secondary focus:border-chime-gold focus:ring-2 focus:ring-chime-gold/10"
+                        disabled={joining}
+                        autoFocus
+                      />
+
+                      <button
+                        type="submit"
+                        disabled={joining}
+                        className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-chime-gold px-5 text-sm font-bold text-chime-text transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {joining ? "Sending..." : "Request to Join"}
+                        {!joining && <ArrowRight size={16} />}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </section>
 
               <div className="flex items-center gap-3">
@@ -438,7 +455,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
                     <button
                       type="button"
                       onClick={handleDiscover}
-                      disabled={isBusy}
+                      disabled={isBusy || requestSent}
                       className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-stone-200 bg-chime-chat px-4 text-sm font-semibold text-chime-text transition hover:border-chime-gold hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Discover Clusters
@@ -456,7 +473,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
 
                 <p className="text-xs leading-5 text-chime-secondary">
                   Public Clusters can be discovered by everyone. Private
-                  Clusters require an invite code.
+                  Clusters require an invite code and owner approval.
                 </p>
               </div>
 

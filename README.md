@@ -163,14 +163,21 @@ Chime/
 ├── frontend/
 │   │
 │   ├── src/
-│   │   ├── api/
-│   │   ├── components/
-│   │   ├── context/
-│   │   ├── hooks/
-│   │   ├── layouts/
-│   │   ├── pages/
-│   │   ├── routes/
-│   │   ├── App.jsx
+│   │   ├── app/
+│   │   │   ├── layouts/
+│   │   │   ├── pages/
+│   │   │   └── App.jsx
+│   │   ├── features/
+│   │   │   ├── auth/
+│   │   │   ├── clusters/
+│   │   │   ├── friends/
+│   │   │   ├── messaging/
+│   │   │   ├── navigation/
+│   │   │   └── users/
+│   │   ├── shared/
+│   │   │   ├── components/
+│   │   │   ├── context/
+│   │   │   └── utils/
 │   │   └── main.jsx
 │   │
 │   ├── public/
@@ -185,7 +192,9 @@ Chime/
 │   ├── middleware/
 │   ├── models/
 │   ├── routes/
-│   ├── services/
+│   ├── socket/
+│   │   └── socketServer.js
+│   ├── utils/
 │   ├── .env
 │   ├── .gitignore
 │   ├── package.json

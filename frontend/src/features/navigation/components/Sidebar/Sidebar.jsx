@@ -10,6 +10,7 @@ import SidebarClusters from "./SidebarClusters";
 import SidebarDirectMessages from "./SidebarDirectMessages";
 import SidebarSearch from "./SidebarSearch";
 import SidebarFooter from "./SidebarFooter";
+import { authFetch } from "../../../../shared/utils/authFetch";
 
 function Sidebar({
   mobile = false,
@@ -23,6 +24,8 @@ function Sidebar({
   onClusterUpdated,
   onClusterDeleted,
   onClusterMenuAction,
+  onClusterMenuDeleteCluster,
+  onClusterMenuWipeChat,
   activeView,
 }) {
   const [user, setUser] = useState(() => {
@@ -59,6 +62,8 @@ function Sidebar({
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingClusters, setLoadingClusters] = useState(true);
 
+  const [sidebarSection, setSidebarSection] = useState("dms");
+
   const [dmMenu, setDmMenu] = useState({
     isOpen: false,
     user: null,
@@ -69,6 +74,10 @@ function Sidebar({
     cluster: null,
   });
 
+  const [isClearChatConfirmOpen, setIsClearChatConfirmOpen] = useState(false);
+  const [clearChatUser, setClearChatUser] = useState(null);
+  const [isClearChatLoading, setIsClearChatLoading] = useState(false);
+
   const dmLongPressTimer = useRef(null);
   const clusterLongPressTimer = useRef(null);
 
@@ -76,12 +85,12 @@ function Sidebar({
     useState(false);
 
   const isFriend = (userId) => {
-    return friends.some((friend) => String(friend._id) === String(userId));
+    return friends.some((friend) => String(friend?._id) === String(userId));
   };
 
   const findConversation = (userId) => {
     return conversations.find(
-      (conversation) => String(conversation._id) === String(userId),
+      (conversation) => String(conversation?._id) === String(userId),
     );
   };
 
@@ -119,6 +128,8 @@ function Sidebar({
     modal,
     isModalLoading,
     openSendRequestModal,
+    openDmUnfriendModal,
+    openDmBlockModal,
     handleLogout,
     closeModal,
     handleConfirmModal,
@@ -143,7 +154,7 @@ function Sidebar({
 
     setClusters((currentClusters) => {
       const existingIndex = currentClusters.findIndex(
-        (cluster) => String(cluster._id) === String(joinedCluster._id),
+        (cluster) => String(cluster?._id) === String(joinedCluster?._id),
       );
 
       if (existingIndex === -1) {
@@ -173,7 +184,7 @@ function Sidebar({
     if (updatedCluster?._id) {
       setClusters((currentClusters) =>
         currentClusters.map((currentCluster) =>
-          String(currentCluster._id) === String(updatedCluster._id)
+          String(currentCluster?._id) === String(updatedCluster?._id)
             ? {
                 ...currentCluster,
                 ...updatedCluster,
@@ -191,7 +202,7 @@ function Sidebar({
 
     setClusters((currentClusters) =>
       currentClusters.map((currentCluster) => {
-        if (String(currentCluster._id) !== String(clusterId)) {
+        if (String(currentCluster?._id) !== String(clusterId)) {
           return currentCluster;
         }
 
@@ -220,6 +231,7 @@ function Sidebar({
     fetchClusters,
     setUser,
     setFriends,
+    setConversations,
     setRequests,
     setPresence,
     setBlockedUserIds,
@@ -254,7 +266,9 @@ function Sidebar({
     };
 
     const handleEscape = (event) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape") {
+        return;
+      }
 
       clearSearch();
 
@@ -267,6 +281,9 @@ function Sidebar({
         isOpen: false,
         cluster: null,
       });
+
+      setIsClearChatConfirmOpen(false);
+      setClearChatUser(null);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -279,7 +296,9 @@ function Sidebar({
   }, [clearSearch, searchRef]);
 
   const isPresenceHidden = (userId) => {
-    if (!userId) return false;
+    if (!userId) {
+      return false;
+    }
 
     const normalizedUserId = String(userId);
 
@@ -369,11 +388,7 @@ function Sidebar({
       return;
     }
 
-    openSendRequestModal({
-      ...conversation,
-      actionType: "dmUnfriend",
-    });
-
+    openDmUnfriendModal(conversation);
     closeDmMenu();
   };
 
@@ -384,11 +399,7 @@ function Sidebar({
       return;
     }
 
-    openSendRequestModal({
-      ...conversation,
-      actionType: "dmBlock",
-    });
-
+    openDmBlockModal(conversation);
     closeDmMenu();
   };
 
@@ -454,6 +465,59 @@ function Sidebar({
       });
     } catch (error) {
       console.error("Failed to unblock user:", error);
+    }
+  };
+
+  const handleDmClearChat = (conversation) => {
+    if (!conversation?._id) {
+      return;
+    }
+
+    closeDmMenu();
+    setClearChatUser(conversation);
+    setIsClearChatConfirmOpen(true);
+  };
+
+  const handleConfirmClearChat = async () => {
+    const otherUserId = clearChatUser?._id;
+
+    if (!otherUserId || isClearChatLoading) {
+      return;
+    }
+
+    setIsClearChatLoading(true);
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/messages/dm/${otherUserId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to clear chat");
+        return;
+      }
+
+      const clearedConversation = findConversation(otherUserId);
+
+      setIsClearChatConfirmOpen(false);
+      setClearChatUser(null);
+
+      if (clearedConversation) {
+        onSelectChat({
+          type: "dm",
+          user: clearedConversation,
+          isFriend: isFriend(otherUserId),
+        });
+      }
+    } catch (error) {
+      console.error("Failed to clear chat:", error);
+    } finally {
+      setIsClearChatLoading(false);
     }
   };
 
@@ -535,6 +599,30 @@ function Sidebar({
     onClusterMenuAction?.("transfer", cluster);
   };
 
+  const handleClusterMenuDeleteCluster = () => {
+    const cluster = clusterMenu.cluster;
+
+    if (!cluster?._id) {
+      closeClusterMenu();
+      return;
+    }
+
+    closeClusterMenu();
+    onClusterMenuDeleteCluster?.(cluster);
+  };
+
+  const handleClusterMenuWipeChat = () => {
+    const cluster = clusterMenu.cluster;
+
+    if (!cluster?._id) {
+      closeClusterMenu();
+      return;
+    }
+
+    closeClusterMenu();
+    onClusterMenuWipeChat?.(cluster);
+  };
+
   const handleClusterMenuLeave = () => {
     const cluster = clusterMenu.cluster;
 
@@ -545,6 +633,15 @@ function Sidebar({
 
     closeClusterMenu();
     onClusterMenuAction?.("leave", cluster);
+  };
+
+  const handleGoHome = () => {
+    onSelectChat?.(null);
+    onSelectCluster?.(null);
+
+    if (mobile && onClose) {
+      onClose();
+    }
   };
 
   const handleSelectConversation = (conversation) => {
@@ -562,7 +659,9 @@ function Sidebar({
   };
 
   const handleDiscoverClusters = () => {
-    if (!onOpenDiscover) return;
+    if (!onOpenDiscover) {
+      return;
+    }
 
     onOpenDiscover();
 
@@ -577,6 +676,17 @@ function Sidebar({
     if (!cluster?._id || !onSelectCluster) {
       return;
     }
+
+    setClusters((currentClusters) =>
+      currentClusters.map((currentCluster) =>
+        String(currentCluster?._id) === String(cluster?._id)
+          ? {
+              ...currentCluster,
+              unreadCount: 0,
+            }
+          : currentCluster,
+      ),
+    );
 
     onSelectCluster(cluster);
 
@@ -678,15 +788,45 @@ function Sidebar({
     return null;
   };
 
+  const hasUnreadDms = conversations.some(
+    (conversation) => Number(conversation?.unreadCount) > 0,
+  );
+
+  const hasUnreadClusters = clusters.some(
+    (cluster) => Number(cluster?.unreadCount) > 0,
+  );
+
+  const clearChatDisplayName =
+    clearChatUser?.displayName || `@${clearChatUser?.username || "this user"}`;
+
   return (
     <>
       <aside
-        className={`h-screen w-72 shrink-0 flex-col border-r border-stone-200 bg-chime-background ${
+        className={`relative h-screen w-72 shrink-0 flex-col border-r border-stone-200 bg-chime-background ${
           mobile ? "flex" : "hidden md:flex"
         }`}
       >
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 px-5">
-          <h1 className="text-2xl font-bold text-chime-text">Chime 🔔</h1>
+          <button
+            type="button"
+            onClick={handleGoHome}
+            className="flex items-center gap-2 text-left"
+            aria-label="Go to Chime home"
+          >
+            <span className="relative text-[27px] font-black uppercase tracking-[0.1em] text-chime-text">
+              <span className="absolute left-0 top-1 text-chime-gold/30">
+                CHIME
+              </span>
+
+              <span className="relative">
+                CH<span className="text-chime-gold">I</span>ME
+              </span>
+
+              <span className="absolute -bottom-1 left-0 h-0.5 w-full bg-chime-gold/70" />
+            </span>
+
+            <span className="text-[20px] leading-none">🔔</span>
+          </button>
 
           {mobile && (
             <button
@@ -700,67 +840,132 @@ function Sidebar({
           )}
         </div>
 
-        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-          <SidebarSearch
-            search={search}
-            searchRef={searchRef}
-            searchResults={searchResults}
-            isSearching={isSearching}
-            onSearchChange={setSearch}
-            onOpenProfile={handleOpenSearchProfile}
-            onMessageUser={handleMessageSearchUser}
-            renderRelationshipButton={renderRelationshipButton}
-            renderPresenceIndicator={renderPresenceIndicator}
-          />
+        <nav className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2">
+          <div className="shrink-0">
+            <SidebarSearch
+              search={search}
+              searchRef={searchRef}
+              searchResults={searchResults}
+              isSearching={isSearching}
+              onSearchChange={setSearch}
+              onOpenProfile={handleOpenSearchProfile}
+              onMessageUser={handleMessageSearchUser}
+              renderRelationshipButton={renderRelationshipButton}
+              renderPresenceIndicator={renderPresenceIndicator}
+            />
+          </div>
 
-          <SidebarDirectMessages
-            conversations={conversations}
-            loadingConversations={loadingConversations}
-            dmMenu={dmMenu}
-            blockedUserIds={blockedUserIds}
-            blockedByUserIds={blockedByUserIds}
-            activeView={activeView}
-            isFriend={isFriend}
-            onOpenDmMenu={openDmMenu}
-            onStartDmLongPress={startDmLongPress}
-            onCancelDmLongPress={cancelDmLongPress}
-            onCloseDmMenu={closeDmMenu}
-            onSelectConversation={handleSelectConversation}
-            onViewProfile={handleDmViewProfile}
-            onUnfriend={handleDmUnfriend}
-            onBlock={handleDmBlock}
-            onUnblock={handleDmUnblock}
-            renderPresenceIndicator={renderPresenceIndicator}
-          />
+          <div className="mt-2 shrink-0 border-b border-stone-200">
+            <div className="flex h-9">
+              <button
+                type="button"
+                onClick={() => setSidebarSection("dms")}
+                className={`relative flex-1 px-2 text-xs font-semibold transition ${
+                  sidebarSection === "dms"
+                    ? "text-chime-text"
+                    : "text-chime-secondary hover:text-chime-text"
+                }`}
+              >
+                <span className="inline-flex items-center">
+                  Direct Messages
+                  {sidebarSection !== "dms" && hasUnreadDms && (
+                    <span
+                      className="ml-1.5 h-1.5 w-1.5 rounded-full bg-chime-gold"
+                      aria-label="Unread direct messages"
+                    />
+                  )}
+                </span>
 
-          <SidebarClusters
-            clusters={clusters}
-            loadingClusters={loadingClusters}
-            user={user}
-            activeView={activeView}
-            clusterMenu={clusterMenu}
-            onCreateCluster={() => setIsCreateClusterModalOpen(true)}
-            onOpenClusterMenu={openClusterMenu}
-            onStartClusterLongPress={startClusterLongPress}
-            onCancelClusterLongPress={cancelClusterLongPress}
-            onCloseClusterMenu={closeClusterMenu}
-            onSelectCluster={handleSelectCluster}
-            onClusterMenuMembers={handleClusterMenuMembers}
-            onClusterMenuSettings={handleClusterMenuSettings}
-            onClusterMenuTransferOwnership={handleClusterMenuTransferOwnership}
-            onClusterMenuLeave={handleClusterMenuLeave}
-          />
+                {sidebarSection === "dms" && (
+                  <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-chime-gold" />
+                )}
+              </button>
 
-          <SidebarFooter
-            activeView={activeView}
-            requests={requests}
-            user={user}
-            onDiscover={handleDiscoverClusters}
-            onOpenFriends={handleOpenFriends}
-            onOpenProfile={handleOpenProfile}
-            onLogout={handleLogout}
-            renderPresenceIndicator={renderPresenceIndicator}
-          />
+              <button
+                type="button"
+                onClick={() => setSidebarSection("clusters")}
+                className={`relative flex-1 px-2 text-xs font-semibold transition ${
+                  sidebarSection === "clusters"
+                    ? "text-chime-text"
+                    : "text-chime-secondary hover:text-chime-text"
+                }`}
+              >
+                <span className="inline-flex items-center">
+                  Clusters
+                  {sidebarSection !== "clusters" && hasUnreadClusters && (
+                    <span
+                      className="ml-1.5 h-1.5 w-1.5 rounded-full bg-chime-gold"
+                      aria-label="Unread Cluster messages"
+                    />
+                  )}
+                </span>
+
+                {sidebarSection === "clusters" && (
+                  <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-chime-gold" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="chime-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto overflow-x-visible pt-4">
+            {sidebarSection === "dms" ? (
+              <SidebarDirectMessages
+                conversations={conversations}
+                loadingConversations={loadingConversations}
+                dmMenu={dmMenu}
+                blockedUserIds={blockedUserIds}
+                blockedByUserIds={blockedByUserIds}
+                activeView={activeView}
+                isFriend={isFriend}
+                onOpenDmMenu={openDmMenu}
+                onStartDmLongPress={startDmLongPress}
+                onCancelDmLongPress={cancelDmLongPress}
+                onCloseDmMenu={closeDmMenu}
+                onSelectConversation={handleSelectConversation}
+                onViewProfile={handleDmViewProfile}
+                onUnfriend={handleDmUnfriend}
+                onBlock={handleDmBlock}
+                onUnblock={handleDmUnblock}
+                onClearChat={handleDmClearChat}
+                renderPresenceIndicator={renderPresenceIndicator}
+              />
+            ) : (
+              <SidebarClusters
+                clusters={clusters}
+                loadingClusters={loadingClusters}
+                user={user}
+                activeView={activeView}
+                clusterMenu={clusterMenu}
+                onCreateCluster={() => setIsCreateClusterModalOpen(true)}
+                onOpenClusterMenu={openClusterMenu}
+                onStartClusterLongPress={startClusterLongPress}
+                onCancelClusterLongPress={cancelClusterLongPress}
+                onCloseClusterMenu={closeClusterMenu}
+                onSelectCluster={handleSelectCluster}
+                onClusterMenuMembers={handleClusterMenuMembers}
+                onClusterMenuSettings={handleClusterMenuSettings}
+                onClusterMenuTransferOwnership={
+                  handleClusterMenuTransferOwnership
+                }
+                onClusterMenuDeleteCluster={handleClusterMenuDeleteCluster}
+                onClusterMenuWipeChat={handleClusterMenuWipeChat}
+                onClusterMenuLeave={handleClusterMenuLeave}
+              />
+            )}
+          </div>
+
+          <div className="relative z-0 shrink-0 pt-2">
+            <SidebarFooter
+              activeView={activeView}
+              requests={requests}
+              user={user}
+              onDiscover={handleDiscoverClusters}
+              onOpenFriends={handleOpenFriends}
+              onOpenProfile={handleOpenProfile}
+              onLogout={handleLogout}
+              renderPresenceIndicator={renderPresenceIndicator}
+            />
+          </div>
         </nav>
       </aside>
 
@@ -803,6 +1008,22 @@ function Sidebar({
         onConfirm={handleConfirmModal}
         onCancel={closeModal}
         loading={isModalLoading}
+      />
+
+      <ConfirmModal
+        isOpen={isClearChatConfirmOpen}
+        title="Clear Chat?"
+        message={`Are you sure you want to clear your chat with ${clearChatDisplayName}? This will only remove the conversation from your view. ${clearChatDisplayName} will still have their chat history.`}
+        confirmText="Clear Chat"
+        cancelText="Cancel"
+        onConfirm={handleConfirmClearChat}
+        onCancel={() => {
+          if (!isClearChatLoading) {
+            setIsClearChatConfirmOpen(false);
+            setClearChatUser(null);
+          }
+        }}
+        loading={isClearChatLoading}
       />
 
       <CreateClusterModal

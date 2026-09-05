@@ -76,6 +76,11 @@ function ChimeLayout() {
 
   const handleSelectCluster = (cluster) => {
     if (!cluster) {
+      setClusterMenuAction(null);
+      setSelectedChat(null);
+      setProfileUserId(null);
+      setActiveView("chat");
+      setIsSidebarOpen(false);
       return;
     }
 
@@ -113,7 +118,7 @@ function ChimeLayout() {
     });
   }, []);
 
-  const handleClusterDeleted = (clusterId) => {
+  const handleClusterDeleted = useCallback((clusterId) => {
     if (!clusterId) {
       return;
     }
@@ -133,7 +138,7 @@ function ChimeLayout() {
     });
 
     setActiveView("chat");
-  };
+  }, []);
 
   const handleClusterLeft = useCallback((clusterId) => {
     if (!clusterId) {
@@ -157,7 +162,7 @@ function ChimeLayout() {
     setActiveView("chat");
   }, []);
 
-  const handleClusterMenuAction = (action, cluster) => {
+  const handleClusterMenuAction = useCallback((action, cluster) => {
     if (!cluster?._id) {
       return;
     }
@@ -191,7 +196,21 @@ function ChimeLayout() {
       action,
       clusterId: String(cluster._id),
     });
-  };
+  }, []);
+
+  const handleClusterMenuDeleteCluster = useCallback(
+    (cluster) => {
+      handleClusterMenuAction("delete", cluster);
+    },
+    [handleClusterMenuAction],
+  );
+
+  const handleClusterMenuWipeChat = useCallback(
+    (cluster) => {
+      handleClusterMenuAction("wipe", cluster);
+    },
+    [handleClusterMenuAction],
+  );
 
   const handleClusterMenuActionHandled = useCallback(() => {
     setClusterMenuAction(null);
@@ -270,6 +289,8 @@ function ChimeLayout() {
         onClusterUpdated={handleClusterUpdated}
         onClusterDeleted={handleClusterDeleted}
         onClusterMenuAction={handleClusterMenuAction}
+        onClusterMenuDeleteCluster={handleClusterMenuDeleteCluster}
+        onClusterMenuWipeChat={handleClusterMenuWipeChat}
         activeView={activeView}
       />
 
@@ -293,6 +314,8 @@ function ChimeLayout() {
               onClusterUpdated={handleClusterUpdated}
               onClusterDeleted={handleClusterDeleted}
               onClusterMenuAction={handleClusterMenuAction}
+              onClusterMenuDeleteCluster={handleClusterMenuDeleteCluster}
+              onClusterMenuWipeChat={handleClusterMenuWipeChat}
               activeView={activeView}
             />
           </div>
@@ -309,7 +332,30 @@ function ChimeLayout() {
             <Menu size={24} />
           </button>
 
-          <h1 className="ml-3 font-bold text-chime-text">Chime 🔔</h1>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedChat(null);
+              setProfileUserId(null);
+              setActiveView("chat");
+            }}
+            className="ml-3 flex items-center gap-2 text-left"
+            aria-label="Go to Chime home"
+          >
+            <span className="relative text-[27px] font-black uppercase tracking-[0.1em] text-chime-text">
+              <span className="absolute left-0 top-1 text-chime-gold/30">
+                CHIME
+              </span>
+
+              <span className="relative">
+                CH<span className="text-chime-gold">I</span>ME
+              </span>
+
+              <span className="absolute -bottom-1 left-0 h-0.5 w-full bg-chime-gold/70" />
+            </span>
+
+            <span className="text-[20px] leading-none">🔔</span>
+          </button>
         </header>
 
         {activeView === "discover" ? (

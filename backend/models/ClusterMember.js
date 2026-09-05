@@ -40,6 +40,12 @@ const clusterMemberSchema = new mongoose.Schema(
       default: "member",
       required: true,
     },
+
+    lastReadMessage: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Message",
+      default: null,
+    },
   },
   {
     timestamps: true,

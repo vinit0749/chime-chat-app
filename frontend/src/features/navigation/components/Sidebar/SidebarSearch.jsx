@@ -61,7 +61,7 @@ function SidebarSearch({
   };
 
   return (
-    <div ref={searchRef} className="relative mb-6">
+    <div ref={searchRef} className="relative">
       <div className="flex items-center rounded-xl border border-stone-200 bg-chime-chat px-3">
         <Search size={17} className="shrink-0 text-chime-secondary" />
 

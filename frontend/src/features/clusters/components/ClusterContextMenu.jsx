@@ -7,15 +7,19 @@ import {
   Crown,
   LogOut,
   Info,
+  Trash2,
 } from "lucide-react";
 
 function ClusterContextMenu({
   isOwner = false,
+  memberCount = 0,
   isPrivate = false,
   inviteCode = "",
   onMembers,
   onSettings,
   onTransferOwnership,
+  onWipeChat,
+  onDeleteCluster,
   onInfo,
   onLeaveCluster,
   loading = false,
@@ -103,14 +107,38 @@ function ClusterContextMenu({
             <span>Cluster Settings</span>
           </button>
 
+          {memberCount === 1 ? (
+            <button
+              type="button"
+              onClick={onDeleteCluster}
+              disabled={loading}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 size={17} className="shrink-0" />
+              <span>Delete Cluster</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onTransferOwnership}
+              disabled={loading}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-chime-text transition hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Crown size={17} className="shrink-0 text-chime-secondary" />
+              <span>Transfer Ownership</span>
+            </button>
+          )}
+
+          <div className="my-1 border-t border-stone-200" />
+
           <button
             type="button"
-            onClick={onTransferOwnership}
+            onClick={onWipeChat}
             disabled={loading}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-chime-text transition hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Crown size={17} className="shrink-0 text-chime-secondary" />
-            <span>Transfer Ownership</span>
+            <Trash2 size={17} className="shrink-0" />
+            <span>Wipe Chat</span>
           </button>
         </>
       ) : (

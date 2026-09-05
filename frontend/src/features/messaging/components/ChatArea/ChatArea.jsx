@@ -33,15 +33,23 @@ function ChatArea({
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+  const [clusterTypingUsers, setClusterTypingUsers] = useState(new Map());
   const [isClusterMembersOpen, setIsClusterMembersOpen] = useState(false);
   const [isClusterSettingsOpen, setIsClusterSettingsOpen] = useState(false);
   const [isClusterInfoOpen, setIsClusterInfoOpen] = useState(false);
   const [isClusterMenuOpen, setIsClusterMenuOpen] = useState(false);
   const [isTransferOwnershipOpen, setIsTransferOwnershipOpen] = useState(false);
   const [isDmMenuOpen, setIsDmMenuOpen] = useState(false);
+  const [isClearChatConfirmOpen, setIsClearChatConfirmOpen] = useState(false);
+  const [isClearChatLoading, setIsClearChatLoading] = useState(false);
   const [isLeaveClusterConfirmOpen, setIsLeaveClusterConfirmOpen] =
     useState(false);
   const [isLeaveClusterLoading, setIsLeaveClusterLoading] = useState(false);
+  const [isDeleteClusterConfirmOpen, setIsDeleteClusterConfirmOpen] =
+    useState(false);
+  const [isDeleteClusterLoading, setIsDeleteClusterLoading] = useState(false);
+  const [isWipeChatConfirmOpen, setIsWipeChatConfirmOpen] = useState(false);
+  const [isWipeChatLoading, setIsWipeChatLoading] = useState(false);
   const [respondingInvitationId, setRespondingInvitationId] = useState(null);
 
   const dmMenuRef = useRef(null);
@@ -81,6 +89,7 @@ function ChatArea({
 
   useEffect(() => {
     setIsOtherUserTyping(false);
+    setClusterTypingUsers(new Map());
     setReplyingTo(null);
     setEditingMessage(null);
     setIsClusterMembersOpen(false);
@@ -89,8 +98,14 @@ function ChatArea({
     setIsClusterMenuOpen(false);
     setIsTransferOwnershipOpen(false);
     setIsDmMenuOpen(false);
+    setIsClearChatConfirmOpen(false);
+    setIsClearChatLoading(false);
     setIsLeaveClusterConfirmOpen(false);
     setIsLeaveClusterLoading(false);
+    setIsDeleteClusterConfirmOpen(false);
+    setIsDeleteClusterLoading(false);
+    setIsWipeChatConfirmOpen(false);
+    setIsWipeChatLoading(false);
     setRespondingInvitationId(null);
     shouldAutoScrollRef.current = false;
   }, [selectedChat, shouldAutoScrollRef]);
@@ -130,6 +145,14 @@ function ChatArea({
 
     if (clusterMenuAction.action === "leave") {
       setIsLeaveClusterConfirmOpen(true);
+    }
+
+    if (clusterMenuAction.action === "delete") {
+      setIsDeleteClusterConfirmOpen(true);
+    }
+
+    if (clusterMenuAction.action === "wipe") {
+      setIsWipeChatConfirmOpen(true);
     }
 
     onClusterMenuActionHandled?.();
@@ -179,6 +202,7 @@ function ChatArea({
     setIsDmMenuOpen,
     setRelationshipAction,
     setIsOtherUserTyping,
+    setClusterTypingUsers,
     setReplyingTo,
     setEditingMessage,
     setIsClusterMembersOpen,
@@ -224,24 +248,55 @@ function ChatArea({
     };
   }, [socket, selectedChat]);
 
-  const stopTyping = () => {
-    const currentChat = selectedChatRef.current;
-
-    if (
-      !socket ||
-      !socket.connected ||
-      !currentChat ||
-      currentChat.type !== "dm" ||
-      !currentChat.user?._id ||
-      dmRelationship !== "friend"
-    ) {
+  useEffect(() => {
+    if (!socket || !selectedChat || selectedChat.type !== "cluster") {
       return;
     }
 
-    socket.emit("typing_stop", {
-      recipient: currentChat.user._id,
-    });
-  };
+    const handleClusterMessageRead = ({ clusterId, messageId }) => {
+      if (
+        !clusterId ||
+        !messageId ||
+        String(selectedChat.cluster?._id) !== String(clusterId)
+      ) {
+        return;
+      }
+
+      const container = messagesContainerRef.current;
+
+      if (!container) {
+        return;
+      }
+
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+
+      if (distanceFromBottom > 150) {
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const currentContainer = messagesContainerRef.current;
+
+          if (!currentContainer) {
+            return;
+          }
+
+          currentContainer.scrollTo({
+            top: currentContainer.scrollHeight,
+            behavior: "smooth",
+          });
+        });
+      });
+    };
+
+    socket.on("cluster_message_read", handleClusterMessageRead);
+
+    return () => {
+      socket.off("cluster_message_read", handleClusterMessageRead);
+    };
+  }, [socket, selectedChat, messagesContainerRef]);
 
   useEffect(() => {
     if (
@@ -276,6 +331,63 @@ function ChatArea({
       senderId,
     });
   }, [socket, selectedChat, messages, dmRelationship]);
+
+  useEffect(() => {
+    if (
+      !selectedChat ||
+      selectedChat.type !== "dm" ||
+      dmRelationship !== "friend" ||
+      messages.length === 0
+    ) {
+      return;
+    }
+
+    const otherUserId = selectedChat.user?._id;
+
+    if (!otherUserId) {
+      return;
+    }
+
+    const markConversationRead = async () => {
+      try {
+        await authFetch(
+          `http://localhost:5000/api/messages/dm/${otherUserId}/read`,
+          {
+            method: "PATCH",
+          },
+        );
+      } catch (error) {
+        console.error("Failed to mark conversation as read:", error);
+      }
+    };
+
+    markConversationRead();
+  }, [selectedChat, messages, dmRelationship]);
+
+  useEffect(() => {
+    if (
+      !socket ||
+      !socket.connected ||
+      !selectedChat ||
+      selectedChat.type !== "cluster" ||
+      !selectedChat.cluster?._id ||
+      messages.length === 0
+    ) {
+      return;
+    }
+
+    const clusterId = String(selectedChat.cluster._id);
+    const latestMessage = messages[messages.length - 1];
+
+    if (!latestMessage?._id) {
+      return;
+    }
+
+    socket.emit("mark_cluster_read", {
+      clusterId,
+      messageId: latestMessage._id,
+    });
+  }, [socket, selectedChat, messages]);
 
   const handleReplyMessage = (message) => {
     if (!message?._id || isDmRelationshipDisabled) {
@@ -376,6 +488,50 @@ function ChatArea({
     }
   };
 
+  const handleClearChat = () => {
+    if (!isDM || !selectedChat?.user?._id) {
+      return;
+    }
+
+    setIsDmMenuOpen(false);
+    setIsClearChatConfirmOpen(true);
+  };
+
+  const handleConfirmClearChat = async () => {
+    const otherUserId = selectedChat?.user?._id;
+
+    if (!otherUserId || isClearChatLoading) {
+      return;
+    }
+
+    setIsClearChatLoading(true);
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/messages/dm/${otherUserId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to clear chat");
+        return;
+      }
+
+      setIsClearChatConfirmOpen(false);
+      setMessages([]);
+      setReplyingTo(null);
+      setEditingMessage(null);
+    } catch (error) {
+      console.error("Failed to clear chat:", error);
+    } finally {
+      setIsClearChatLoading(false);
+    }
+  };
+
   const handleClusterInvitationResponse = (messageId, action) => {
     if (
       !messageId ||
@@ -455,6 +611,56 @@ function ChatArea({
     setIsTransferOwnershipOpen(true);
   };
 
+  const handleDeleteCluster = () => {
+    setIsClusterMenuOpen(false);
+    setIsDeleteClusterConfirmOpen(true);
+  };
+
+  const handleWipeChat = () => {
+    if (!isCluster || !isClusterOwner) {
+      return;
+    }
+
+    setIsClusterMenuOpen(false);
+    setIsWipeChatConfirmOpen(true);
+  };
+
+  const handleConfirmWipeChat = async () => {
+    const clusterId = selectedChat?.cluster?._id;
+
+    if (!clusterId || isWipeChatLoading) {
+      return;
+    }
+
+    setIsWipeChatLoading(true);
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/messages/cluster/${clusterId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to wipe Cluster chat");
+        return;
+      }
+
+      setIsWipeChatConfirmOpen(false);
+      setMessages([]);
+      setReplyingTo(null);
+      setEditingMessage(null);
+      setClusterTypingUsers(new Map());
+    } catch (error) {
+      console.error("Failed to wipe Cluster chat:", error);
+    } finally {
+      setIsWipeChatLoading(false);
+    }
+  };
+
   const handleTransferOwnershipCompleted = (updatedCluster) => {
     setIsTransferOwnershipOpen(false);
 
@@ -497,12 +703,46 @@ function ChatArea({
       setMessages([]);
       setReplyingTo(null);
       setEditingMessage(null);
+      setClusterTypingUsers(new Map());
 
       onClusterLeft?.(String(clusterId));
     } catch (error) {
       console.error("Failed to leave Cluster:", error);
     } finally {
       setIsLeaveClusterLoading(false);
+    }
+  };
+
+  const handleConfirmDeleteCluster = async () => {
+    const clusterId = selectedChat?.cluster?._id;
+
+    if (!clusterId || isDeleteClusterLoading) {
+      return;
+    }
+
+    setIsDeleteClusterLoading(true);
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/clusters/${clusterId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to delete Cluster");
+        return;
+      }
+
+      setIsDeleteClusterConfirmOpen(false);
+      handleClusterDeleted(data.clusterId || String(clusterId));
+    } catch (error) {
+      console.error("Failed to delete Cluster:", error);
+    } finally {
+      setIsDeleteClusterLoading(false);
     }
   };
 
@@ -521,6 +761,9 @@ function ChatArea({
     setIsClusterMenuOpen(false);
     setIsTransferOwnershipOpen(false);
     setIsLeaveClusterConfirmOpen(false);
+    setIsDeleteClusterConfirmOpen(false);
+    setIsDeleteClusterLoading(false);
+    setClusterTypingUsers(new Map());
     setMessages([]);
     setReplyingTo(null);
     setEditingMessage(null);
@@ -542,12 +785,13 @@ function ChatArea({
             </h1>
 
             <p className="mt-3 text-sm leading-6 text-chime-secondary sm:text-base">
-              A friendly place to connect and chat. Search for someone in the
-              sidebar or join a Cluster to start a conversation.
+              Your conversations start here. Find someone to message, catch up
+              with your friends, or step into a Cluster and join the
+              conversation.
             </p>
 
             <p className="mt-2 text-sm text-chime-secondary">
-              Your conversations and Clusters will appear here.
+              Search for someone in the sidebar to get started.
             </p>
           </div>
         </div>
@@ -612,6 +856,26 @@ function ChatArea({
       selectedChat.cluster?.owner?._id || selectedChat.cluster?.owner || "",
     ) === String(user?._id);
 
+  const clusterTypingList = Array.from(clusterTypingUsers.values());
+
+  const clusterTypingNames = clusterTypingList
+    .map(
+      (typingUser) =>
+        typingUser.displayName?.trim() || typingUser.username?.trim(),
+    )
+    .filter(Boolean);
+
+  const clusterTypingLabel =
+    clusterTypingNames.length === 1
+      ? `${clusterTypingNames[0]} is typing`
+      : clusterTypingNames.length === 2
+        ? `${clusterTypingNames[0]}, ${clusterTypingNames[1]} are typing`
+        : clusterTypingNames.length > 2
+          ? `${clusterTypingNames[0]}, ${clusterTypingNames[1]} +${
+              clusterTypingNames.length - 2
+            } others are typing`
+          : null;
+
   let latestReadMessageId = null;
 
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -624,6 +888,29 @@ function ChatArea({
     ) {
       latestReadMessageId = String(message._id);
       break;
+    }
+  }
+
+  let latestClusterReadByMessageId = null;
+
+  if (isCluster) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+
+      const isOwnMessage =
+        message.sender?._id && String(message.sender._id) === String(user?._id);
+
+      const hasOtherReaders =
+        isOwnMessage &&
+        Array.isArray(message.readBy) &&
+        message.readBy.some(
+          (reader) => String(reader.userId) !== String(user?._id),
+        );
+
+      if (hasOtherReaders) {
+        latestClusterReadByMessageId = String(message._id);
+        break;
+      }
     }
   }
 
@@ -731,6 +1018,7 @@ function ChatArea({
                 onUnfriend={handleUnfriend}
                 onBlock={handleBlock}
                 onUnblock={handleUnblock}
+                onClearChat={handleClearChat}
                 showUnfriend={dmRelationship === "friend"}
                 showBlock={
                   dmRelationship !== "blocked_by" &&
@@ -738,7 +1026,7 @@ function ChatArea({
                 }
                 showUnblock={dmRelationship === "blocked"}
                 placement="chat"
-                loading={isRelationshipLoading}
+                loading={isRelationshipLoading || isClearChatLoading}
               />
             )}
           </div>
@@ -763,6 +1051,7 @@ function ChatArea({
             {isClusterMenuOpen && (
               <ClusterContextMenu
                 isOwner={isClusterOwner}
+                memberCount={selectedChat.cluster?.memberCount || 0}
                 isPrivate={
                   String(clusterVisibility).toLowerCase() === "private"
                 }
@@ -770,8 +1059,11 @@ function ChatArea({
                 onMembers={handleOpenClusterMembers}
                 onSettings={handleOpenClusterSettings}
                 onTransferOwnership={handleTransferOwnership}
+                onWipeChat={handleWipeChat}
+                onDeleteCluster={handleDeleteCluster}
                 onInfo={handleOpenClusterInfo}
                 onLeaveCluster={handleLeaveCluster}
+                loading={isWipeChatLoading || isDeleteClusterLoading}
               />
             )}
           </div>
@@ -780,7 +1072,7 @@ function ChatArea({
 
       <div
         ref={messagesContainerRef}
-        className="relative z-10 min-h-0 flex-1 overflow-y-auto p-6 pb-1"
+        className="chime-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto p-6 pb-1 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden"
       >
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
@@ -863,17 +1155,28 @@ function ChatArea({
               const showReadStatus =
                 isOwnMessage && String(message._id) === latestReadMessageId;
 
+              const clusterReadBy =
+                isCluster &&
+                isOwnMessage &&
+                String(message._id) === latestClusterReadByMessageId &&
+                Array.isArray(message.readBy)
+                  ? message.readBy.filter(
+                      (reader) => String(reader.userId) !== String(user?._id),
+                    )
+                  : [];
+
               if (message.messageType === "cluster_invite") {
                 return (
-                  <ClusterInvitationMessage
-                    key={message._id}
-                    message={message}
-                    isOwnMessage={isOwnMessage}
-                    onRespond={handleClusterInvitationResponse}
-                    responding={
-                      String(respondingInvitationId) === String(message._id)
-                    }
-                  />
+                  <div key={message._id} className="mb-4">
+                    <ClusterInvitationMessage
+                      message={message}
+                      isOwnMessage={isOwnMessage}
+                      onRespond={handleClusterInvitationResponse}
+                      responding={
+                        String(respondingInvitationId) === String(message._id)
+                      }
+                    />
+                  </div>
                 );
               }
 
@@ -894,6 +1197,8 @@ function ChatArea({
                   avatarColor="bg-chime-bright"
                   isOwnMessage={isOwnMessage}
                   isGrouped={isGrouped}
+                  isClusterMessage={isCluster}
+                  readBy={clusterReadBy}
                   onOpenProfile={messageProfileHandler}
                   messageId={message._id}
                   onUnsend={isOwnMessage ? handleUnsendMessage : undefined}
@@ -913,19 +1218,22 @@ function ChatArea({
         )}
       </div>
 
-      {isDM && isOtherUserTyping && canMessage && (
-        <div className="shrink-0 px-6 pb-1">
-          <div className="flex h-7 items-center gap-2 text-xs text-chime-secondary">
-            <span>{chatDisplayName} is typing</span>
+      {((isDM && isOtherUserTyping) || (isCluster && clusterTypingLabel)) &&
+        canMessage && (
+          <div className="shrink-0 px-6 pb-1">
+            <div className="flex h-7 items-center gap-2 text-xs text-chime-secondary">
+              <span>
+                {isDM ? `${chatDisplayName} is typing` : clusterTypingLabel}
+              </span>
 
-            <span className="flex items-center gap-0.5">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary" />
-            </span>
+              <span className="flex items-center gap-0.5">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-chime-secondary" />
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       <div className="relative z-30 shrink-0">
         {isDM && !canMessage ? (
@@ -955,8 +1263,6 @@ function ChatArea({
             editingMessage={editingMessage}
             onCancelEdit={handleCancelEdit}
             onMessageEdited={handleMessageEdited}
-            onTyping={() => {}}
-            onStopTyping={stopTyping}
           />
         )}
       </div>
@@ -1022,6 +1328,21 @@ function ChatArea({
       />
 
       <ConfirmModal
+        isOpen={isClearChatConfirmOpen}
+        title="Clear Chat?"
+        message={`Are you sure you want to clear your chat with ${chatDisplayName}? This will only remove the conversation from your view. ${chatDisplayName} will still have their chat history.`}
+        confirmText="Clear Chat"
+        cancelText="Cancel"
+        onConfirm={handleConfirmClearChat}
+        onCancel={() => {
+          if (!isClearChatLoading) {
+            setIsClearChatConfirmOpen(false);
+          }
+        }}
+        loading={isClearChatLoading}
+      />
+
+      <ConfirmModal
         isOpen={isLeaveClusterConfirmOpen}
         title="Leave Cluster?"
         message={`Are you sure you want to leave ${
@@ -1036,6 +1357,38 @@ function ChatArea({
           }
         }}
         loading={isLeaveClusterLoading}
+      />
+
+      <ConfirmModal
+        isOpen={isDeleteClusterConfirmOpen}
+        title="Delete Cluster?"
+        message={`Are you sure you want to permanently delete ${
+          selectedChat?.cluster?.name || "this Cluster"
+        } and all of its messages? This action cannot be undone.`}
+        confirmText={isDeleteClusterLoading ? "Deleting..." : "Delete Cluster"}
+        cancelText="Cancel"
+        onConfirm={handleConfirmDeleteCluster}
+        onCancel={() => {
+          if (!isDeleteClusterLoading) {
+            setIsDeleteClusterConfirmOpen(false);
+          }
+        }}
+        loading={isDeleteClusterLoading}
+      />
+
+      <ConfirmModal
+        isOpen={isWipeChatConfirmOpen}
+        title="Wipe Chat?"
+        message="This will permanently delete all messages in this Cluster for everyone. This action cannot be undone."
+        confirmText={isWipeChatLoading ? "Wiping..." : "Wipe Chat"}
+        cancelText="Cancel"
+        onConfirm={handleConfirmWipeChat}
+        onCancel={() => {
+          if (!isWipeChatLoading) {
+            setIsWipeChatConfirmOpen(false);
+          }
+        }}
+        loading={isWipeChatLoading}
       />
     </main>
   );

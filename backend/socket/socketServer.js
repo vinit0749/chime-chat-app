@@ -250,6 +250,84 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("mark_cluster_read", async (data) => {
+    try {
+      const { clusterId, messageId } = data || {};
+
+      if (!clusterId || !messageId) {
+        return;
+      }
+
+      if (
+        !mongoose.Types.ObjectId.isValid(clusterId) ||
+        !mongoose.Types.ObjectId.isValid(messageId)
+      ) {
+        return;
+      }
+
+      const clusterIdString = String(clusterId);
+
+      const membership = await ClusterMember.findOne({
+        cluster: clusterIdString,
+        user: userId,
+        status: "active",
+      });
+
+      if (!membership) {
+        return;
+      }
+
+      if (!socket.clusterRooms.has(clusterIdString)) {
+        return;
+      }
+
+      const message = await Message.findOne({
+        _id: messageId,
+        cluster: clusterIdString,
+      }).select("_id createdAt");
+
+      if (!message) {
+        return;
+      }
+
+      if (membership.lastReadMessage) {
+        const lastReadMessage = await Message.findById(
+          membership.lastReadMessage,
+        ).select("_id createdAt");
+
+        if (
+          lastReadMessage &&
+          new Date(message.createdAt) <= new Date(lastReadMessage.createdAt)
+        ) {
+          return;
+        }
+      }
+
+      membership.lastReadMessage = message._id;
+      await membership.save();
+
+      const reader = await User.findById(userId).select(
+        "_id username displayName profilePicture",
+      );
+
+      if (!reader) {
+        return;
+      }
+
+      io.to(getClusterRoom(clusterIdString)).emit("cluster_message_read", {
+        clusterId: clusterIdString,
+        userId: String(reader._id),
+        displayName: reader.displayName || "",
+        username: reader.username || "",
+        profilePicture: reader.profilePicture || "",
+        messageId: String(message._id),
+        readAt: new Date(),
+      });
+    } catch (error) {
+      console.error("Failed to mark Cluster message as read:", error);
+    }
+  });
+
   socket.on("typing_start", async (data) => {
     try {
       const { recipient } = data || {};
@@ -463,7 +541,7 @@ io.on("connection", (socket) => {
     try {
       const { clusterId } = data || {};
 
-      if (!clusterId) {
+      if (!clusterId || !mongoose.Types.ObjectId.isValid(clusterId)) {
         return;
       }
 
@@ -479,11 +557,22 @@ io.on("connection", (socket) => {
         return;
       }
 
+      const user = await User.findById(userId).select(
+        "_id username displayName profilePicture isDeleted",
+      );
+
+      if (!user || user.isDeleted) {
+        return;
+      }
+
       const clusterRoom = getClusterRoom(clusterIdString);
 
       socket.to(clusterRoom).emit("cluster_typing_start", {
         clusterId: clusterIdString,
         userId,
+        displayName: user.displayName || "",
+        username: user.username || "",
+        profilePicture: user.profilePicture || "",
       });
     } catch (error) {
       console.error("Cluster typing start error:", error);
@@ -494,7 +583,7 @@ io.on("connection", (socket) => {
     try {
       const { clusterId } = data || {};
 
-      if (!clusterId) {
+      if (!clusterId || !mongoose.Types.ObjectId.isValid(clusterId)) {
         return;
       }
 
@@ -622,6 +711,24 @@ io.on("connection", (socket) => {
         clusterId: clusterIdString,
         message,
       });
+
+      const activeMembers = await ClusterMember.find({
+        cluster: clusterIdString,
+        status: "active",
+      }).select("user");
+
+      for (const member of activeMembers) {
+        const memberId = String(member.user);
+
+        if (memberId === userId) {
+          continue;
+        }
+
+        emitToUser(memberId, "cluster_message_received", {
+          clusterId: clusterIdString,
+          message,
+        });
+      }
     } catch (error) {
       console.error("Cluster message error:", error);
 

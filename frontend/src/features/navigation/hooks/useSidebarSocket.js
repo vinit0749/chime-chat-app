@@ -10,6 +10,7 @@ function useSidebarSocket({
   fetchClusters,
   setUser,
   setFriends,
+  setConversations,
   setRequests,
   setPresence,
   setBlockedUserIds,
@@ -145,6 +146,113 @@ function useSidebarSocket({
 
         return nextPresence;
       });
+    });
+
+    socket.on("new_message", (data) => {
+      if (!data) {
+        return;
+      }
+
+      const message = data.message || data;
+      const sender = message.sender || data.sender;
+
+      if (!sender?._id || String(sender._id) === String(userId)) {
+        return;
+      }
+
+      const senderId = String(sender._id);
+
+      if (
+        blockedUserIdsRef.current.has(senderId) ||
+        blockedByUserIdsRef.current.has(senderId)
+      ) {
+        return;
+      }
+
+      setConversations((currentConversations) => {
+        const existingIndex = currentConversations.findIndex(
+          (conversation) => String(conversation._id) === senderId,
+        );
+
+        if (existingIndex === -1) {
+          return [
+            {
+              _id: sender._id,
+              username: sender.username || "",
+              displayName: sender.displayName || "",
+              email: sender.email || "",
+              profilePicture: sender.profilePicture || "",
+              unreadCount: 1,
+            },
+            ...currentConversations,
+          ];
+        }
+
+        return currentConversations.map((conversation, index) =>
+          index === existingIndex
+            ? {
+                ...conversation,
+                username: sender.username || conversation.username,
+                displayName: sender.displayName || conversation.displayName,
+                profilePicture:
+                  sender.profilePicture || conversation.profilePicture || "",
+                unreadCount: (conversation.unreadCount || 0) + 1,
+              }
+            : conversation,
+        );
+      });
+    });
+
+    socket.on("conversation_read", (data) => {
+      const otherUserId = data?.otherUserId;
+
+      if (!otherUserId) {
+        return;
+      }
+
+      setConversations((currentConversations) =>
+        currentConversations.map((conversation) =>
+          String(conversation._id) === String(otherUserId)
+            ? {
+                ...conversation,
+                unreadCount: 0,
+              }
+            : conversation,
+        ),
+      );
+    });
+
+    socket.on("cluster_message_received", (data) => {
+      if (!data) {
+        return;
+      }
+
+      const message = data.message || data;
+      const clusterId = String(
+        data.clusterId || message.cluster?._id || message.cluster || "",
+      );
+
+      if (!clusterId) {
+        return;
+      }
+
+      if (
+        message.sender?._id &&
+        String(message.sender._id) === String(userId)
+      ) {
+        return;
+      }
+
+      setClusters((currentClusters) =>
+        currentClusters.map((cluster) =>
+          String(cluster._id) === clusterId
+            ? {
+                ...cluster,
+                unreadCount: (Number(cluster.unreadCount) || 0) + 1,
+              }
+            : cluster,
+        ),
+      );
     });
 
     socket.on("friend_request_received", (data) => {
@@ -754,6 +862,7 @@ function useSidebarSocket({
     userId,
     setUser,
     setFriends,
+    setConversations,
     setRequests,
     setPresence,
     setBlockedUserIds,

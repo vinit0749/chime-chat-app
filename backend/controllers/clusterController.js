@@ -161,20 +161,92 @@ export const createCluster = async (req, res) => {
         ? await generateUniqueInviteCode()
         : undefined;
 
-    const cluster = await Cluster.create({
-      name: trimmedName,
-      description: trimmedDescription,
-      visibility: clusterVisibility,
-      inviteCode,
-      owner: userId,
-    });
+    let profilePicture = "";
+    let profilePicturePublicId = "";
 
-    await ClusterMember.create({
-      cluster: cluster._id,
-      user: userId,
-      status: "active",
-      role: "owner",
-    });
+    if (req.file) {
+      const uploadResult = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: "chime/cluster-profile-pictures",
+            resource_type: "image",
+            transformation: [
+              {
+                width: 800,
+                height: 800,
+                crop: "fill",
+                gravity: "center",
+                quality: "auto",
+                fetch_format: "auto",
+              },
+            ],
+          },
+          (error, result) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          },
+        );
+
+        uploadStream.end(req.file.buffer);
+      });
+
+      profilePicture = uploadResult.secure_url;
+      profilePicturePublicId = uploadResult.public_id;
+    }
+
+    let cluster;
+
+    try {
+      cluster = await Cluster.create({
+        name: trimmedName,
+        description: trimmedDescription,
+        visibility: clusterVisibility,
+        inviteCode,
+        owner: userId,
+        profilePicture,
+        profilePicturePublicId,
+      });
+    } catch (error) {
+      if (profilePicturePublicId) {
+        try {
+          await cloudinary.uploader.destroy(profilePicturePublicId);
+        } catch (cleanupError) {
+          console.error(
+            "Failed to clean up Cluster profile picture:",
+            cleanupError,
+          );
+        }
+      }
+
+      throw error;
+    }
+
+    try {
+      await ClusterMember.create({
+        cluster: cluster._id,
+        user: userId,
+        status: "active",
+        role: "owner",
+      });
+    } catch (error) {
+      await Cluster.findByIdAndDelete(cluster._id);
+
+      if (profilePicturePublicId) {
+        try {
+          await cloudinary.uploader.destroy(profilePicturePublicId);
+        } catch (cleanupError) {
+          console.error(
+            "Failed to clean up Cluster profile picture:",
+            cleanupError,
+          );
+        }
+      }
+
+      throw error;
+    }
 
     await cluster.populate("owner", "username displayName profilePicture");
 
@@ -274,10 +346,30 @@ export const getMyClusters = async (req, res) => {
             await cluster.save();
           }
 
+          const unreadQuery = {
+            cluster: cluster._id,
+            sender: { $ne: userId },
+          };
+
+          if (membership.lastReadMessage) {
+            const lastReadMessage = await Message.findById(
+              membership.lastReadMessage,
+            ).select("createdAt");
+
+            if (lastReadMessage) {
+              unreadQuery.createdAt = {
+                $gt: lastReadMessage.createdAt,
+              };
+            }
+          }
+
+          const unreadCount = await Message.countDocuments(unreadQuery);
+
           return formatCluster(cluster, {
             role: membership.role,
             membershipStatus: membership.status,
             isMember: true,
+            unreadCount,
           });
         }),
     );

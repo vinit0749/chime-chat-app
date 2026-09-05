@@ -16,3 +16,25 @@
 :root {
   font-family: "Nunito Sans", sans-serif;
 }
+
+.chime-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #d6c7a1 transparent;
+}
+
+.chime-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chime-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chime-scrollbar::-webkit-scrollbar-thumb {
+  background: #d6c7a1;
+  border-radius: 9999px;
+}
+
+.chime-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #bda873;
+}

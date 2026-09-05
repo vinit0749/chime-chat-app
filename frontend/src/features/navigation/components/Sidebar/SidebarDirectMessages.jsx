@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import DmContextMenu from "../../../messaging/components/DmContextMenu";
 
 function SidebarDirectMessages({
@@ -17,14 +19,46 @@ function SidebarDirectMessages({
   onUnfriend,
   onBlock,
   onUnblock,
+  onClearChat,
   renderPresenceIndicator,
 }) {
+  const [menuPosition, setMenuPosition] = useState(null);
+  const menuRef = useRef(null);
+
+  const formatUnreadCount = (count) => {
+    const unreadCount = Number(count) || 0;
+
+    if (unreadCount <= 0) {
+      return null;
+    }
+
+    return unreadCount >= 10 ? "10+" : unreadCount;
+  };
+
+  useEffect(() => {
+    if (!dmMenu.isOpen) {
+      setMenuPosition(null);
+    }
+  }, [dmMenu.isOpen]);
+
+  useEffect(() => {
+    if (!dmMenu.isOpen || !menuPosition) {
+      return;
+    }
+
+    const handleScroll = () => {
+      onCloseDmMenu();
+    };
+
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [dmMenu.isOpen, menuPosition, onCloseDmMenu]);
+
   return (
     <div>
-      <h2 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-chime-secondary">
-        Direct Messages
-      </h2>
-
       {loadingConversations ? (
         <p className="px-2 py-2 text-sm text-chime-secondary">Loading...</p>
       ) : conversations.length === 0 ? (
@@ -43,12 +77,25 @@ function SidebarDirectMessages({
 
             const isBlockedByMe = blockedUserIds.has(conversationId);
             const isBlockedByOther = blockedByUserIds.has(conversationId);
+            const unreadCount = formatUnreadCount(conversation.unreadCount);
 
             return (
               <div
                 key={conversation._id}
                 className="relative"
-                onContextMenu={(event) => onOpenDmMenu(conversation, event)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+
+                  const rect = event.currentTarget.getBoundingClientRect();
+
+                  setMenuPosition({
+                    top: rect.top,
+                    left: rect.right,
+                  });
+
+                  onOpenDmMenu(conversation, event);
+                }}
                 onTouchStart={() => onStartDmLongPress(conversation)}
                 onTouchEnd={onCancelDmLongPress}
                 onTouchMove={onCancelDmLongPress}
@@ -83,20 +130,39 @@ function SidebarDirectMessages({
                   <span className="min-w-0 flex-1 truncate">
                     {conversation.displayName || `@${conversation.username}`}
                   </span>
+
+                  {unreadCount !== null && (
+                    <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-chime-gold px-2 text-[11px] font-bold text-chime-text">
+                      {unreadCount}
+                    </span>
+                  )}
                 </button>
 
-                {isMenuTarget && (
-                  <DmContextMenu
-                    user={conversation}
-                    onViewProfile={onViewProfile}
-                    onUnfriend={onUnfriend}
-                    onBlock={onBlock}
-                    onUnblock={onUnblock}
-                    showUnfriend={isFriend(conversation._id)}
-                    showBlock={!isBlockedByMe && !isBlockedByOther}
-                    showUnblock={isBlockedByMe}
-                  />
-                )}
+                {isMenuTarget &&
+                  menuPosition &&
+                  createPortal(
+                    <div
+                      ref={menuRef}
+                      className="fixed z-[99999]"
+                      style={{
+                        top: `${menuPosition.top}px`,
+                        left: `${menuPosition.left}px`,
+                      }}
+                    >
+                      <DmContextMenu
+                        user={conversation}
+                        onViewProfile={onViewProfile}
+                        onUnfriend={onUnfriend}
+                        onBlock={onBlock}
+                        onUnblock={onUnblock}
+                        onClearChat={() => onClearChat(conversation)}
+                        showUnfriend={isFriend(conversation._id)}
+                        showBlock={!isBlockedByMe && !isBlockedByOther}
+                        showUnblock={isBlockedByMe}
+                      />
+                    </div>,
+                    document.body,
+                  )}
               </div>
             );
           })}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Undo2, Reply, Pencil } from "lucide-react";
+import ClusterReadByModal from "./ClusterReadByModal";
 
 function Message({
   userId,
@@ -14,6 +15,8 @@ function Message({
   avatarColor = "bg-chime-gold",
   isOwnMessage,
   isGrouped,
+  isClusterMessage = false,
+  readBy = [],
   onOpenProfile,
   messageId,
   onUnsend,
@@ -25,6 +28,7 @@ function Message({
   isEdited = false,
 }) {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [isReadByModalOpen, setIsReadByModalOpen] = useState(false);
 
   const [menuPosition, setMenuPosition] = useState({
     top: 0,
@@ -40,11 +44,20 @@ function Message({
   const deliveryIndicator =
     status === "delivered" || status === "read" ? "✓✓" : "✓";
 
-  /*
-    ============================================================
-    ACTION MENU
-    ============================================================
-  */
+  const readerNames = Array.isArray(readBy)
+    ? readBy
+        .map((reader) => reader.displayName?.trim() || reader.username?.trim())
+        .filter(Boolean)
+    : [];
+
+  const readByLabel =
+    readerNames.length === 1
+      ? `Read by ${readerNames[0]}`
+      : readerNames.length === 2
+        ? `Read by ${readerNames[0]}, ${readerNames[1]}`
+        : readerNames.length > 2
+          ? `Read by ${readerNames[0]}, ${readerNames[1]} +${readerNames.length - 2} others`
+          : null;
 
   const openActionMenu = () => {
     if (!bubbleRef.current) {
@@ -65,9 +78,6 @@ function Message({
           bottom: window.innerHeight,
         };
 
-    /*
-      Edit adds one extra menu item for own messages.
-    */
     const menuWidth = 176;
     const menuHeight = isOwnMessage ? 176 : 96;
 
@@ -107,24 +117,12 @@ function Message({
     setIsActionMenuOpen(false);
   };
 
-  /*
-    ============================================================
-    DESKTOP RIGHT CLICK
-    ============================================================
-  */
-
   const handleContextMenu = (event) => {
     event.preventDefault();
     event.stopPropagation();
 
     openActionMenu();
   };
-
-  /*
-    ============================================================
-    MOBILE LONG PRESS
-    ============================================================
-  */
 
   const handlePointerDown = (event) => {
     if (event.pointerType !== "touch") {
@@ -144,12 +142,6 @@ function Message({
       longPressTimerRef.current = null;
     }
   };
-
-  /*
-    ============================================================
-    CLOSE ACTION MENU
-    ============================================================
-  */
 
   useEffect(() => {
     if (!isActionMenuOpen) {
@@ -185,32 +177,11 @@ function Message({
     };
   }, [isActionMenuOpen]);
 
-  /*
-    ============================================================
-    CLEAN UP LONG PRESS
-    ============================================================
-  */
-
   useEffect(() => {
     return () => {
       cancelLongPress();
     };
   }, []);
-
-  /*
-    ============================================================
-    EDIT
-    ============================================================
-
-    IMPORTANT:
-
-    Message no longer edits itself.
-
-    Instead, it sends the complete message to ChatArea.
-    ChatArea will pass it to MessageInput, where the normal
-    message input becomes the edit input.
-    ============================================================
-  */
 
   const handleEdit = () => {
     if (!messageId || !isOwnMessage || !onEdit) {
@@ -225,12 +196,6 @@ function Message({
     });
   };
 
-  /*
-    ============================================================
-    COPY
-    ============================================================
-  */
-
   const handleCopy = async () => {
     if (!content) {
       return;
@@ -243,12 +208,6 @@ function Message({
       console.error("Failed to copy message:", error);
     }
   };
-
-  /*
-    ============================================================
-    REPLY
-    ============================================================
-  */
 
   const handleReply = () => {
     if (!messageId || !onReply) {
@@ -269,12 +228,6 @@ function Message({
     });
   };
 
-  /*
-    ============================================================
-    UNSEND
-    ============================================================
-  */
-
   const handleUnsend = () => {
     if (!messageId || !onUnsend) {
       return;
@@ -283,12 +236,6 @@ function Message({
     closeActionMenu();
     onUnsend(messageId);
   };
-
-  /*
-    ============================================================
-    JUMP TO REPLIED MESSAGE
-    ============================================================
-  */
 
   const handleJumpToReply = (event) => {
     event.preventDefault();
@@ -300,12 +247,6 @@ function Message({
 
     onJumpToMessage(String(replyTo._id));
   };
-
-  /*
-    ============================================================
-    ACTION MENU
-    ============================================================
-  */
 
   const actionMenu = isActionMenuOpen
     ? createPortal(
@@ -364,20 +305,8 @@ function Message({
       )
     : null;
 
-  /*
-    ============================================================
-    REPLY PREVIEW
-    ============================================================
-  */
-
   const repliedProfileName =
     replyTo?.sender?.displayName || replyTo?.sender?.username || "Deleted User";
-
-  /*
-    ============================================================
-    RENDER
-    ============================================================
-  */
 
   return (
     <>
@@ -386,11 +315,10 @@ function Message({
         data-message-id={messageId}
         className={`flex w-full gap-3 rounded-xl px-0 transition-colors duration-300 ${
           isOwnMessage ? "flex-row-reverse" : "flex-row"
-        } ${isGrouped ? "mb-1" : "mb-4"} ${
+        } ${isGrouped ? "mb-2" : "mb-4"} ${
           isHighlighted ? "bg-chime-gold/20 px-2 py-1" : ""
         }`}
       >
-        {/* Avatar */}
         <button
           type="button"
           onClick={() => {
@@ -419,13 +347,11 @@ function Message({
           )}
         </button>
 
-        {/* Message Content */}
         <div
           className={`min-w-0 max-w-[70%] ${
             isOwnMessage ? "text-right" : "text-left"
           }`}
         >
-          {/* User + Time */}
           {!isGrouped && (
             <div
               className={`mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 ${
@@ -453,7 +379,6 @@ function Message({
             </div>
           )}
 
-          {/* Message Bubble */}
           <div
             ref={bubbleRef}
             onContextMenu={handleContextMenu}
@@ -468,7 +393,6 @@ function Message({
                 : "rounded-tl-md border-stone-200 bg-chime-background text-chime-text"
             }`}
           >
-            {/* Replied Message Preview */}
             {replyTo && (
               <button
                 type="button"
@@ -488,14 +412,12 @@ function Message({
 
             <span className="break-words">{content}</span>
 
-            {/* Edited Label */}
             {isEdited && (
               <span className="ml-2 text-[10px] font-medium text-chime-secondary">
                 Edited
               </span>
             )}
 
-            {/* Delivery Indicator */}
             {isOwnMessage && (
               <span className="ml-2 text-[11px] font-semibold leading-none text-chime-secondary">
                 {deliveryIndicator}
@@ -503,16 +425,34 @@ function Message({
             )}
           </div>
 
-          {/* Read Label */}
-          {showReadStatus && (
-            <div className="mt-2 text-[11px] font-bold text-chime-secondary">
-              Read
-            </div>
-          )}
+          {isClusterMessage && isOwnMessage
+            ? readByLabel && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsReadByModalOpen(true)}
+                    className="text-[11px] font-bold text-chime-secondary transition hover:text-chime-text hover:underline"
+                  >
+                    {readByLabel}
+                  </button>
+                </div>
+              )
+            : showReadStatus && (
+                <div className="mt-2 text-[11px] font-bold text-chime-secondary">
+                  Read
+                </div>
+              )}
         </div>
       </div>
 
       {actionMenu}
+
+      {isReadByModalOpen && (
+        <ClusterReadByModal
+          readers={readBy}
+          onClose={() => setIsReadByModalOpen(false)}
+        />
+      )}
     </>
   );
 }

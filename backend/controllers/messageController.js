@@ -275,23 +275,64 @@ export const getClusterMessages = async (req, res) => {
       });
     }
 
-    const messages = await Message.find({
-      cluster: clusterId,
-    })
-      .sort({ createdAt: 1 })
-      .populate("sender", "username displayName profilePicture")
-      .populate("cluster", "name description visibility owner")
-      .populate({
-        path: "replyTo",
-        select: "content sender senderUsername createdAt cluster",
-        populate: {
-          path: "sender",
-          select: "username displayName profilePicture",
-        },
-      });
+    const [messages, activeMembers] = await Promise.all([
+      Message.find({
+        cluster: clusterId,
+      })
+        .sort({ createdAt: 1 })
+        .populate("sender", "username displayName profilePicture")
+        .populate("cluster", "name description visibility owner")
+        .populate({
+          path: "replyTo",
+          select: "content sender senderUsername createdAt cluster",
+          populate: {
+            path: "sender",
+            select: "username displayName profilePicture",
+          },
+        }),
+
+      ClusterMember.find({
+        cluster: clusterId,
+        status: "active",
+      })
+        .select("user lastReadMessage")
+        .populate("user", "username displayName profilePicture"),
+    ]);
+
+    const messageIndexes = new Map(
+      messages.map((message, index) => [String(message._id), index]),
+    );
+
+    const memberReadIndexes = activeMembers.map((member) => ({
+      user: member.user,
+      readIndex: member.lastReadMessage
+        ? (messageIndexes.get(String(member.lastReadMessage)) ?? -1)
+        : -1,
+    }));
+
+    const messagesWithReadBy = messages.map((message, messageIndex) => {
+      const readBy = memberReadIndexes
+        .filter(
+          ({ user, readIndex }) =>
+            user &&
+            String(user._id) !== String(message.sender?._id) &&
+            readIndex >= messageIndex,
+        )
+        .map(({ user }) => ({
+          userId: String(user._id),
+          displayName: user.displayName || "",
+          username: user.username || "",
+          profilePicture: user.profilePicture || "",
+        }));
+
+      return {
+        ...message.toObject(),
+        readBy,
+      };
+    });
 
     return res.status(200).json({
-      messages,
+      messages: messagesWithReadBy,
     });
   } catch (error) {
     console.error("Get cluster messages error:", error);
@@ -327,7 +368,15 @@ export const getDirectMessages = async (req, res) => {
       });
     }
 
-    const messages = await Message.find({
+    const conversation = await Conversation.findOne({
+      participants: {
+        $all: [currentUserId, otherUserId],
+      },
+    });
+
+    const clearedAt = conversation?.clearedAt?.get(String(currentUserId));
+
+    const messageQuery = {
       cluster: null,
       $or: [
         {
@@ -339,7 +388,15 @@ export const getDirectMessages = async (req, res) => {
           recipient: currentUserId,
         },
       ],
-    })
+    };
+
+    if (clearedAt) {
+      messageQuery.createdAt = {
+        $gt: clearedAt,
+      };
+    }
+
+    const messages = await Message.find(messageQuery)
       .sort({ createdAt: 1 })
       .populate("sender", "username displayName profilePicture")
       .populate("recipient", "username displayName profilePicture")
@@ -368,6 +425,81 @@ export const getDirectMessages = async (req, res) => {
   }
 };
 
+export const markDirectConversationRead = async (req, res) => {
+  try {
+    const currentUserId = req.user.userId;
+    const otherUserId = req.params.userId;
+
+    if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
+
+    if (String(currentUserId) === String(otherUserId)) {
+      return res.status(400).json({
+        message: "Invalid conversation",
+      });
+    }
+
+    const conversation = await Conversation.findOne({
+      participants: {
+        $all: [currentUserId, otherUserId],
+      },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        message: "Conversation not found",
+      });
+    }
+
+    const lastMessage = await Message.findOne({
+      cluster: null,
+      $or: [
+        {
+          sender: currentUserId,
+          recipient: otherUserId,
+        },
+        {
+          sender: otherUserId,
+          recipient: currentUserId,
+        },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .select("createdAt");
+
+    const readAt = lastMessage?.createdAt || new Date();
+
+    conversation.lastReadAt.set(String(currentUserId), readAt);
+
+    await conversation.save({
+      timestamps: false,
+    });
+
+    const emitToUser = req.app.get("emitToUser");
+
+    if (emitToUser) {
+      emitToUser(String(currentUserId), "conversation_read", {
+        otherUserId: String(otherUserId),
+        readAt,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Conversation marked as read",
+      readAt,
+    });
+  } catch (error) {
+    console.error("Mark direct conversation read error:", error);
+
+    return res.status(500).json({
+      message: "Failed to mark conversation as read",
+    });
+  }
+};
+
 export const getDirectConversations = async (req, res) => {
   try {
     const currentUserId = req.user.userId;
@@ -392,12 +524,37 @@ export const getDirectConversations = async (req, res) => {
         continue;
       }
 
+      const lastReadAt =
+        conversation.lastReadAt?.get(String(currentUserId)) || null;
+
+      const clearedAt =
+        conversation.clearedAt?.get(String(currentUserId)) || null;
+
+      const unreadAfter = [lastReadAt, clearedAt]
+        .filter(Boolean)
+        .sort((a, b) => new Date(b) - new Date(a))[0];
+
+      const unreadQuery = {
+        cluster: null,
+        sender: otherUser._id,
+        recipient: currentUserId,
+      };
+
+      if (unreadAfter) {
+        unreadQuery.createdAt = {
+          $gt: unreadAfter,
+        };
+      }
+
+      const unreadCount = await Message.countDocuments(unreadQuery);
+
       result.push({
         _id: otherUser._id,
         username: otherUser.username,
         displayName: otherUser.displayName,
         email: otherUser.email,
         profilePicture: otherUser.profilePicture || "",
+        unreadCount,
       });
     }
 
@@ -564,6 +721,135 @@ export const unsendMessage = async (req, res) => {
 
     return res.status(500).json({
       message: "Failed to unsend message",
+    });
+  }
+};
+
+export const clearDirectMessages = async (req, res) => {
+  try {
+    const currentUserId = req.user.userId;
+    const otherUserId = req.params.userId;
+
+    if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
+
+    if (String(currentUserId) === String(otherUserId)) {
+      return res.status(400).json({
+        message: "Invalid conversation",
+      });
+    }
+
+    const conversation = await Conversation.findOne({
+      participants: {
+        $all: [currentUserId, otherUserId],
+      },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        message: "Conversation not found",
+      });
+    }
+
+    const clearedAt = new Date();
+
+    conversation.clearedAt.set(String(currentUserId), clearedAt);
+
+    await conversation.save({
+      timestamps: false,
+    });
+
+    const emitToUser = req.app.get("emitToUser");
+
+    if (emitToUser) {
+      emitToUser(String(currentUserId), "conversation_cleared", {
+        userId: String(currentUserId),
+        otherUserId: String(otherUserId),
+        clearedAt,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Conversation cleared successfully",
+      clearedAt,
+    });
+  } catch (error) {
+    console.error("Clear direct messages error:", error);
+
+    return res.status(500).json({
+      message: "Failed to clear conversation",
+    });
+  }
+};
+
+export const wipeClusterMessages = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { clusterId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(clusterId)) {
+      return res.status(400).json({
+        message: "Invalid cluster ID",
+      });
+    }
+
+    const cluster = await Cluster.findById(clusterId);
+
+    if (!cluster || cluster.isDeleted) {
+      return res.status(404).json({
+        message: "Cluster not found",
+      });
+    }
+
+    const membership = await ClusterMember.findOne({
+      cluster: clusterId,
+      user: userId,
+      status: "active",
+      role: "owner",
+    });
+
+    if (!membership) {
+      return res.status(403).json({
+        message: "Only the Cluster owner can wipe chat",
+      });
+    }
+
+    await Message.deleteMany({
+      cluster: clusterId,
+    });
+
+    await ClusterMember.updateMany(
+      {
+        cluster: clusterId,
+        status: "active",
+      },
+      {
+        $set: {
+          lastReadMessage: null,
+        },
+      },
+    );
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.to(`cluster:${String(clusterId)}`).emit("cluster_chat_wiped", {
+        clusterId: String(clusterId),
+      });
+    }
+
+    return res.status(200).json({
+      message: "Cluster chat wiped successfully",
+      clusterId: String(clusterId),
+    });
+  } catch (error) {
+    console.error("Wipe Cluster messages error:", error);
+
+    return res.status(500).json({
+      message: "Failed to wipe Cluster chat",
     });
   }
 };

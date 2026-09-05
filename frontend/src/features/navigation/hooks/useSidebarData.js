@@ -126,14 +126,6 @@ function useSidebarData({
     fetchConversations();
     fetchRequests();
     fetchClusters();
-
-    const interval = setInterval(() => {
-      fetchFriends();
-      fetchConversations();
-      fetchRequests();
-    }, 2000);
-
-    return () => clearInterval(interval);
   }, []);
 
   return {

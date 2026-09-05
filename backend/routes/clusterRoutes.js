@@ -1,5 +1,4 @@
 import express from "express";
-
 import multer from "multer";
 
 import {
@@ -24,7 +23,6 @@ import {
 } from "../controllers/clusterController.js";
 
 import { getClusterMessages } from "../controllers/messageController.js";
-
 import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -36,7 +34,12 @@ const upload = multer({
   },
 });
 
-router.post("/", authMiddleware, createCluster);
+router.post(
+  "/",
+  authMiddleware,
+  upload.single("profilePicture"),
+  createCluster,
+);
 
 router.get("/public", authMiddleware, getPublicClusters);
 
@@ -59,6 +62,8 @@ router.patch(
   transferClusterOwnership,
 );
 
+router.post("/join-private", authMiddleware, joinPrivateCluster);
+
 router.post("/:clusterId/members/:userId", authMiddleware, addClusterMember);
 
 router.delete("/:clusterId/members/:userId", authMiddleware, kickClusterMember);
@@ -70,8 +75,6 @@ router.get("/:clusterId/messages", authMiddleware, getClusterMessages);
 router.get("/:clusterId/members", authMiddleware, getClusterMembers);
 
 router.post("/:clusterId/join", authMiddleware, joinPublicCluster);
-
-router.post("/join-private", authMiddleware, joinPrivateCluster);
 
 router.post("/:clusterId/request", authMiddleware, requestToJoinCluster);
 

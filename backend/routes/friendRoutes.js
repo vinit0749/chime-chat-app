@@ -2,14 +2,10 @@ import express from "express";
 import authMiddleware from "../middleware/authMiddleware.js";
 import User from "../models/User.js";
 import Friendship from "../models/Friendship.js";
+import { createNotification } from "../utils/notificationService.js";
+import Notification from "../models/Notification.js";
 
 const router = express.Router();
-
-/*
-  ============================================================
-  SOCKET REAL-TIME HELPER
-  ============================================================
-*/
 
 const emitToUser = (req, userId, event, data) => {
   const emit = req.app.get("emitToUser");
@@ -20,12 +16,6 @@ const emitToUser = (req, userId, event, data) => {
 
   emit(String(userId), event, data);
 };
-
-/*
-  ============================================================
-  SEND FRIEND REQUEST
-  ============================================================
-*/
 
 router.post("/request/:userId", authMiddleware, async (req, res) => {
   try {
@@ -53,10 +43,6 @@ router.post("/request/:userId", authMiddleware, async (req, res) => {
       });
     }
 
-    /*
-      Blocked users cannot send or receive friend requests
-      between each other.
-    */
     if (
       currentUser.blockedUsers.includes(targetUserId) ||
       targetUser.blockedUsers.includes(currentUserId)
@@ -110,10 +96,6 @@ router.post("/request/:userId", authMiddleware, async (req, res) => {
         });
       }
 
-      /*
-    A rejected friendship is no longer active.
-    Remove the old record so a fresh request can be created.
-  */
       if (existingFriendship.status === "rejected") {
         await Friendship.deleteOne({
           _id: existingFriendship._id,
@@ -133,9 +115,17 @@ router.post("/request/:userId", authMiddleware, async (req, res) => {
     await currentUser.save();
     await targetUser.save();
 
-    /*
-      Notify recipient immediately.
-    */
+    await createNotification({
+      recipient: targetUserId,
+      type: "friend_request",
+      actor: currentUserId,
+      target: currentUserId,
+      targetType: "User",
+      emitToUser: (recipient, event, data) => {
+        emitToUser(req, recipient, event, data);
+      },
+    });
+
     emitToUser(req, targetUserId, "friend_request_received", {
       user: {
         _id: currentUser._id,
@@ -145,9 +135,6 @@ router.post("/request/:userId", authMiddleware, async (req, res) => {
       },
     });
 
-    /*
-      Confirm to sender immediately.
-    */
     emitToUser(req, currentUserId, "friend_request_sent", {
       user: {
         _id: targetUser._id,
@@ -169,12 +156,6 @@ router.post("/request/:userId", authMiddleware, async (req, res) => {
   }
 });
 
-/*
-  ============================================================
-  ACCEPT FRIEND REQUEST
-  ============================================================
-*/
-
 router.post("/accept/:userId", authMiddleware, async (req, res) => {
   try {
     const currentUserId = req.user.userId;
@@ -195,9 +176,6 @@ router.post("/accept/:userId", authMiddleware, async (req, res) => {
       });
     }
 
-    /*
-      A blocked relationship cannot become a friendship.
-    */
     if (
       currentUser.blockedUsers.includes(requesterId) ||
       requester.blockedUsers.includes(currentUserId)
@@ -242,9 +220,43 @@ router.post("/accept/:userId", authMiddleware, async (req, res) => {
     await currentUser.save();
     await requester.save();
 
-    /*
-      Notify both users immediately.
-    */
+    const notification = await Notification.findOneAndUpdate(
+      {
+        recipient: currentUserId,
+        type: "friend_request",
+        target: requesterId,
+        targetType: "User",
+      },
+      {
+        $set: {
+          actionStatus: "accepted",
+          read: true,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (notification) {
+      emitToUser(req, currentUserId, "notification_updated", {
+        notificationId: String(notification._id),
+        read: true,
+        actionStatus: "accepted",
+      });
+    }
+
+    await createNotification({
+      recipient: requesterId,
+      type: "friend_request_accepted",
+      actor: currentUserId,
+      target: currentUserId,
+      targetType: "User",
+      emitToUser: (recipient, event, data) => {
+        emitToUser(req, recipient, event, data);
+      },
+    });
+
     const currentUserData = {
       _id: currentUser._id,
       username: currentUser.username,
@@ -278,12 +290,6 @@ router.post("/accept/:userId", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  REJECT FRIEND REQUEST
-  ============================================================
-*/
 
 router.post("/reject/:userId", authMiddleware, async (req, res) => {
   try {
@@ -328,9 +334,32 @@ router.post("/reject/:userId", authMiddleware, async (req, res) => {
     await currentUser.save();
     await requester.save();
 
-    /*
-      Notify both users immediately.
-    */
+    const notification = await Notification.findOneAndUpdate(
+      {
+        recipient: currentUserId,
+        type: "friend_request",
+        target: requesterId,
+        targetType: "User",
+      },
+      {
+        $set: {
+          actionStatus: "declined",
+          read: true,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (notification) {
+      emitToUser(req, currentUserId, "notification_updated", {
+        notificationId: String(notification._id),
+        read: true,
+        actionStatus: "declined",
+      });
+    }
+
     emitToUser(req, currentUserId, "friend_request_rejected", {
       userId: requesterId,
     });
@@ -350,12 +379,6 @@ router.post("/reject/:userId", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  GET CURRENT USER'S FRIENDS
-  ============================================================
-*/
 
 router.get("/", authMiddleware, async (req, res) => {
   try {
@@ -383,12 +406,6 @@ router.get("/", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  UNFRIEND
-  ============================================================
-*/
 
 router.delete("/:userId", authMiddleware, async (req, res) => {
   try {
@@ -422,15 +439,9 @@ router.delete("/:userId", authMiddleware, async (req, res) => {
       });
     }
 
-    /*
-      Remove friendship in both directions.
-    */
     currentUser.friends.pull(friendId);
     friend.friends.pull(currentUserId);
 
-    /*
-      Remove accepted Friendship record.
-    */
     await Friendship.findOneAndDelete({
       status: "accepted",
       $or: [
@@ -448,9 +459,6 @@ router.delete("/:userId", authMiddleware, async (req, res) => {
     await currentUser.save();
     await friend.save();
 
-    /*
-      Tell both clients immediately.
-    */
     emitToUser(req, currentUserId, "friend_removed", {
       userId: friendId,
     });
@@ -470,20 +478,6 @@ router.delete("/:userId", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  BLOCK USER
-  ============================================================
-
-  Blocking:
-  - Adds target to current user's blockedUsers.
-  - Instantly removes friendship in both directions.
-  - Removes pending friend requests in both directions.
-  - Removes all Friendship records between both users.
-  - Immediately notifies both clients.
-  ============================================================
-*/
 
 router.post("/block/:userId", authMiddleware, async (req, res) => {
   try {
@@ -517,29 +511,17 @@ router.post("/block/:userId", authMiddleware, async (req, res) => {
       });
     }
 
-    /*
-      Add target to blocked users.
-    */
     currentUser.blockedUsers.push(targetUserId);
 
-    /*
-      Remove friendship in both directions.
-    */
     currentUser.friends.pull(targetUserId);
     targetUser.friends.pull(currentUserId);
 
-    /*
-      Remove pending friend requests in both directions.
-    */
     currentUser.friendRequestsSent.pull(targetUserId);
     currentUser.friendRequestsReceived.pull(targetUserId);
 
     targetUser.friendRequestsSent.pull(currentUserId);
     targetUser.friendRequestsReceived.pull(currentUserId);
 
-    /*
-      Remove every Friendship record between the users.
-    */
     await Friendship.deleteMany({
       $or: [
         {
@@ -556,18 +538,10 @@ router.post("/block/:userId", authMiddleware, async (req, res) => {
     await currentUser.save();
     await targetUser.save();
 
-    /*
-      Notify the blocker.
-      This allows their UI to immediately change the DM state.
-    */
     emitToUser(req, currentUserId, "user_blocked", {
       userId: targetUserId,
     });
 
-    /*
-      Notify the blocked user.
-      Their friend list / DM state can immediately update too.
-    */
     emitToUser(req, targetUserId, "user_blocked_by_other", {
       userId: currentUserId,
     });
@@ -583,12 +557,6 @@ router.post("/block/:userId", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  UNBLOCK USER
-  ============================================================
-*/
 
 router.delete("/block/:userId", authMiddleware, async (req, res) => {
   try {
@@ -619,11 +587,6 @@ router.delete("/block/:userId", authMiddleware, async (req, res) => {
 
     await currentUser.save();
 
-    /*
-      Notify the current user's other connected clients.
-      The other user does not need to know that they were unblocked;
-      there is no friendship restoration.
-    */
     emitToUser(req, currentUserId, "user_unblocked", {
       userId: targetUserId,
     });
@@ -639,12 +602,6 @@ router.delete("/block/:userId", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  GET BLOCKED USERS
-  ============================================================
-*/
 
 router.get("/blocked", authMiddleware, async (req, res) => {
   try {
@@ -674,12 +631,6 @@ router.get("/blocked", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  GET INCOMING FRIEND REQUESTS
-  ============================================================
-*/
 
 router.get("/requests", authMiddleware, async (req, res) => {
   try {

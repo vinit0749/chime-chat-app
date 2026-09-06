@@ -197,49 +197,40 @@ function useChatSocket({
 
       selectedChatRef.current = updatedChat;
 
-      if (onClusterUpdatedRef.current) {
-        onClusterUpdatedRef.current(updatedCluster);
-      }
+      onClusterUpdatedRef.current?.(updatedCluster);
     });
 
-    newSocket.on(
-      "cluster_ownership_transferred",
-      ({ cluster, previousOwnerId, newOwnerId }) => {
-        if (!cluster?._id) {
-          return;
-        }
+    newSocket.on("cluster_ownership_transferred", ({ cluster }) => {
+      if (!cluster?._id) {
+        return;
+      }
 
-        const currentChat = selectedChatRef.current;
+      const currentChat = selectedChatRef.current;
 
-        if (
-          !currentChat ||
-          currentChat.type !== "cluster" ||
-          String(currentChat.cluster?._id) !== String(cluster._id)
-        ) {
-          return;
-        }
+      if (
+        !currentChat ||
+        currentChat.type !== "cluster" ||
+        String(currentChat.cluster?._id) !== String(cluster._id)
+      ) {
+        return;
+      }
 
-        const updatedCluster = {
-          ...currentChat.cluster,
-          ...cluster,
-          owner: cluster.owner,
-        };
+      const updatedCluster = {
+        ...currentChat.cluster,
+        ...cluster,
+        owner: cluster.owner,
+      };
 
-        const updatedChat = {
-          ...currentChat,
-          cluster: updatedCluster,
-        };
+      selectedChatRef.current = {
+        ...currentChat,
+        cluster: updatedCluster,
+      };
 
-        selectedChatRef.current = updatedChat;
+      setIsTransferOwnershipOpen(false);
+      setIsClusterMenuOpen(false);
 
-        setIsTransferOwnershipOpen(false);
-        setIsClusterMenuOpen(false);
-
-        if (onClusterUpdatedRef.current) {
-          onClusterUpdatedRef.current(updatedCluster);
-        }
-      },
-    );
+      onClusterUpdatedRef.current?.(updatedCluster);
+    });
 
     newSocket.on("cluster_kicked", ({ clusterId }) => {
       if (!clusterId) {
@@ -265,9 +256,7 @@ function useChatSocket({
       setEditingMessage(null);
       setClusterTypingUsers?.(() => new Map());
 
-      if (onClusterDeletedRef.current) {
-        onClusterDeletedRef.current(String(clusterId));
-      }
+      onClusterDeletedRef.current?.(String(clusterId));
     });
 
     newSocket.on("cluster_deleted", ({ clusterId }) => {
@@ -294,9 +283,7 @@ function useChatSocket({
       setEditingMessage(null);
       setClusterTypingUsers?.(() => new Map());
 
-      if (onClusterDeletedRef.current) {
-        onClusterDeletedRef.current(String(clusterId));
-      }
+      onClusterDeletedRef.current?.(String(clusterId));
     });
 
     newSocket.on("cluster_chat_wiped", ({ clusterId }) => {
@@ -326,9 +313,7 @@ function useChatSocket({
         return;
       }
 
-      if (onClusterJoinedRef.current) {
-        onClusterJoinedRef.current(cluster);
-      }
+      onClusterJoinedRef.current?.(cluster);
     });
 
     newSocket.on("cluster_member_joined", (payload) => {
@@ -339,13 +324,11 @@ function useChatSocket({
         return;
       }
 
-      if (onClusterMemberJoinedRef.current) {
-        onClusterMemberJoinedRef.current({
-          clusterId,
-          member,
-          cluster: payload?.cluster || null,
-        });
-      }
+      onClusterMemberJoinedRef.current?.({
+        clusterId,
+        member,
+        cluster: payload?.cluster || null,
+      });
     });
 
     newSocket.on("cluster_invitation_updated", (payload) => {
@@ -505,111 +488,11 @@ function useChatSocket({
       });
     });
 
-    newSocket.on("new_message", (newMessage) => {
-      if (!newMessage?._id) {
-        return;
-      }
+    const handleClusterMessage = (payload) => {
+      const clusterId = payload?.clusterId;
+      const message = payload?.message || payload;
 
-      const currentChat = selectedChatRef.current;
-      const currentUser = userRef.current;
-
-      if (!currentChat) {
-        return;
-      }
-
-      if (
-        currentChat.type === "dm" &&
-        newMessage.sender &&
-        String(newMessage.sender._id) === String(currentChat.user?._id)
-      ) {
-        setIsOtherUserTyping(false);
-      }
-
-      if (
-        currentChat.type === "cluster" &&
-        newMessage.sender &&
-        String(newMessage.sender._id) !== String(currentUser?._id)
-      ) {
-        setClusterTypingUsers?.((currentUsers) => {
-          const nextUsers = new Map(currentUsers);
-          nextUsers.delete(String(newMessage.sender._id));
-          return nextUsers;
-        });
-      }
-
-      setMessages((currentMessages) => {
-        if (
-          currentMessages.some(
-            (message) => String(message._id) === String(newMessage._id),
-          )
-        ) {
-          return currentMessages;
-        }
-
-        if (currentChat.type === "cluster") {
-          return currentMessages;
-        }
-
-        if (currentChat.type === "dm") {
-          const currentUserId = String(currentUser._id);
-          const otherUserId = String(currentChat.user?._id);
-
-          if (!newMessage.sender || !newMessage.recipient || !otherUserId) {
-            return currentMessages;
-          }
-
-          const senderId = String(newMessage.sender._id);
-
-          const recipientId = String(
-            newMessage.recipient._id || newMessage.recipient,
-          );
-
-          const isCurrentConversation =
-            (senderId === currentUserId && recipientId === otherUserId) ||
-            (senderId === otherUserId && recipientId === currentUserId);
-
-          if (!isCurrentConversation) {
-            return currentMessages;
-          }
-
-          let sender = newMessage.sender;
-
-          if (senderId === currentUserId) {
-            sender = {
-              ...sender,
-              profilePicture:
-                sender.profilePicture || currentUser.profilePicture || "",
-              displayName: sender.displayName || currentUser.displayName || "",
-              username: sender.username || currentUser.username || "",
-            };
-          } else if (senderId === otherUserId) {
-            sender = {
-              ...sender,
-              profilePicture:
-                sender.profilePicture || currentChat.user.profilePicture || "",
-              displayName:
-                sender.displayName || currentChat.user.displayName || "",
-              username: sender.username || currentChat.user.username || "",
-            };
-          }
-
-          shouldAutoScrollRef.current = true;
-
-          return [
-            ...currentMessages,
-            {
-              ...newMessage,
-              sender,
-            },
-          ];
-        }
-
-        return currentMessages;
-      });
-    });
-
-    newSocket.on("new_cluster_message", ({ clusterId, message }) => {
-      if (!message?._id || !clusterId) {
+      if (!clusterId || !message?._id) {
         return;
       }
 
@@ -660,18 +543,18 @@ function useChatSocket({
               ...message.sender,
               profilePicture:
                 message.sender.profilePicture ||
-                (senderId === String(currentUser._id)
-                  ? currentUser.profilePicture || ""
+                (senderId === String(currentUser?._id)
+                  ? currentUser?.profilePicture || ""
                   : ""),
               displayName:
                 message.sender.displayName ||
-                (senderId === String(currentUser._id)
-                  ? currentUser.displayName || ""
+                (senderId === String(currentUser?._id)
+                  ? currentUser?.displayName || ""
                   : ""),
               username:
                 message.sender.username ||
-                (senderId === String(currentUser._id)
-                  ? currentUser.username || ""
+                (senderId === String(currentUser?._id)
+                  ? currentUser?.username || ""
                   : ""),
             },
           };
@@ -681,6 +564,112 @@ function useChatSocket({
 
         return [...currentMessages, normalizedMessage];
       });
+    };
+
+    newSocket.on("new_cluster_message", handleClusterMessage);
+    newSocket.on("cluster_message_received", handleClusterMessage);
+
+    newSocket.on("new_message", (newMessage) => {
+      if (!newMessage?._id) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+      const currentUser = userRef.current;
+
+      if (!currentChat) {
+        return;
+      }
+
+      if (
+        currentChat.type === "dm" &&
+        newMessage.sender &&
+        String(newMessage.sender._id) === String(currentChat.user?._id)
+      ) {
+        setIsOtherUserTyping(false);
+      }
+
+      setMessages((currentMessages) => {
+        if (
+          currentMessages.some(
+            (message) => String(message._id) === String(newMessage._id),
+          )
+        ) {
+          return currentMessages;
+        }
+
+        if (currentChat.type === "cluster") {
+          return currentMessages;
+        }
+
+        if (currentChat.type !== "dm") {
+          return currentMessages;
+        }
+
+        const currentUserId = String(currentUser?._id);
+        const otherUserId = String(currentChat.user?._id);
+
+        if (!newMessage.sender || !newMessage.recipient || !otherUserId) {
+          return currentMessages;
+        }
+
+        const senderId = String(newMessage.sender._id);
+
+        const recipientId = String(
+          newMessage.recipient._id || newMessage.recipient,
+        );
+
+        const isCurrentConversation =
+          (senderId === currentUserId && recipientId === otherUserId) ||
+          (senderId === otherUserId && recipientId === currentUserId);
+
+        if (!isCurrentConversation) {
+          return currentMessages;
+        }
+
+        let sender = newMessage.sender;
+
+        if (senderId === currentUserId) {
+          sender = {
+            ...sender,
+            profilePicture:
+              sender.profilePicture || currentUser?.profilePicture || "",
+            displayName: sender.displayName || currentUser?.displayName || "",
+            username: sender.username || currentUser?.username || "",
+          };
+        } else if (senderId === otherUserId) {
+          sender = {
+            ...sender,
+            profilePicture:
+              sender.profilePicture || currentChat.user?.profilePicture || "",
+            displayName:
+              sender.displayName || currentChat.user?.displayName || "",
+            username: sender.username || currentChat.user?.username || "",
+          };
+        }
+
+        shouldAutoScrollRef.current = true;
+
+        return [
+          ...currentMessages,
+          {
+            ...newMessage,
+            sender,
+          },
+        ];
+      });
+
+      if (
+        currentChat.type === "cluster" &&
+        newMessage.sender?._id &&
+        String(newMessage.sender._id) !== String(currentUser?._id)
+      ) {
+        setClusterTypingUsers?.((currentUsers) => {
+          const nextUsers = new Map(currentUsers);
+          nextUsers.delete(String(newMessage.sender._id));
+          return nextUsers;
+        });
+      }
     });
 
     newSocket.on("message_delivered", ({ messageId }) => {

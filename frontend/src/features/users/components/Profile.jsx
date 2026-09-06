@@ -91,7 +91,9 @@ function Profile({ userId, onBack }) {
             const friendsData = await friendsResponse.json();
             const friends = friendsData.friends || [];
 
-            setIsFriend(friends.some((friend) => friend._id === userId));
+            setIsFriend(
+              friends.some((friend) => String(friend._id) === String(userId)),
+            );
           }
         } else {
           setIsFriend(false);
@@ -381,10 +383,6 @@ function Profile({ userId, onBack }) {
     profile.bio !== originalProfile.bio ||
     profile.status !== originalProfile.status;
 
-  /*
-    For another user's profile, use the live Socket.IO presence.
-    For our own profile, use the locally selected status.
-  */
   const displayedStatus = isOwnProfile ? profile.status : getPresence(userId);
 
   const statusLabel =
@@ -517,6 +515,7 @@ function Profile({ userId, onBack }) {
       <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-chime-background">
         <header className="flex h-16 shrink-0 items-center border-b border-stone-200 px-5 md:px-8">
           <button
+            type="button"
             onClick={onBack}
             className="mr-3 rounded-xl p-2 text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
             aria-label="Back"
@@ -641,7 +640,6 @@ function Profile({ userId, onBack }) {
                       className="hidden h-10 items-center gap-2 rounded-xl bg-chime-gold px-4 text-sm font-bold text-chime-text shadow-sm transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-50 sm:flex"
                     >
                       <Save size={16} />
-
                       {saving ? "Saving..." : "Save"}
                     </button>
                   </div>
@@ -680,7 +678,6 @@ function Profile({ userId, onBack }) {
                     className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-chime-gold px-4 text-sm font-bold text-chime-text shadow-sm transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Save size={16} />
-
                     {saving ? "Saving..." : "Save"}
                   </button>
                 </div>
@@ -820,7 +817,6 @@ function Profile({ userId, onBack }) {
                           className="flex items-center gap-2 rounded-xl bg-chime-gold px-5 py-2.5 text-sm font-bold text-chime-text shadow-sm transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Save size={17} />
-
                           {saving ? "Saving..." : "Save Changes"}
                         </button>
                       </div>
@@ -954,7 +950,6 @@ function Profile({ userId, onBack }) {
                   className="flex items-center gap-2 rounded-xl bg-chime-gold px-5 py-2.5 text-sm font-bold text-chime-text transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Check size={17} />
-
                   {uploadingPicture ? "Uploading..." : "Use Picture"}
                 </button>
               </div>

@@ -21,6 +21,7 @@ function useSidebarSocket({
   onClusterUpdated,
   onClusterJoined,
   onClusterMemberJoined,
+  activeView,
 }) {
   const blockedUserIdsRef = useRef(blockedUserIds);
   const blockedByUserIdsRef = useRef(blockedByUserIds);
@@ -176,6 +177,7 @@ function useSidebarSocket({
 
         if (existingIndex === -1) {
           return [
+            ...currentConversations,
             {
               _id: sender._id,
               username: sender.username || "",
@@ -183,8 +185,8 @@ function useSidebarSocket({
               email: sender.email || "",
               profilePicture: sender.profilePicture || "",
               unreadCount: 1,
+              isPinned: false,
             },
-            ...currentConversations,
           ];
         }
 
@@ -240,6 +242,14 @@ function useSidebarSocket({
         message.sender?._id &&
         String(message.sender._id) === String(userId)
       ) {
+        return;
+      }
+
+      if (message.messageType === "system") {
+        return;
+      }
+
+      if (activeView === `cluster-${clusterId}`) {
         return;
       }
 
@@ -530,7 +540,13 @@ function useSidebarSocket({
           return currentClusters;
         }
 
-        return [...currentClusters, cluster];
+        return [
+          ...currentClusters,
+          {
+            ...cluster,
+            isPinned: false,
+          },
+        ];
       });
     });
 
@@ -547,7 +563,13 @@ function useSidebarSocket({
             return currentClusters;
           }
 
-          return [...currentClusters, cluster];
+          return [
+            ...currentClusters,
+            {
+              ...cluster,
+              isPinned: false,
+            },
+          ];
         });
 
         return;
@@ -569,7 +591,13 @@ function useSidebarSocket({
         );
 
         if (existingIndex === -1) {
-          return [...currentClusters, cluster];
+          return [
+            ...currentClusters,
+            {
+              ...cluster,
+              isPinned: false,
+            },
+          ];
         }
 
         return currentClusters.map((item, index) =>
@@ -602,6 +630,10 @@ function useSidebarSocket({
               ? {
                   ...currentCluster,
                   ...cluster,
+                  unreadCount:
+                    activeView === `cluster-${cluster._id}`
+                      ? 0
+                      : currentCluster.unreadCount,
                 }
               : currentCluster,
           ),
@@ -707,6 +739,10 @@ function useSidebarSocket({
             ? {
                 ...currentCluster,
                 ...cluster,
+                unreadCount:
+                  activeView === `cluster-${cluster._id}`
+                    ? 0
+                    : currentCluster.unreadCount,
               }
             : currentCluster,
         ),
@@ -870,6 +906,7 @@ function useSidebarSocket({
     setDmMenu,
     setClusterMenu,
     setClusters,
+    activeView,
   ]);
 }
 

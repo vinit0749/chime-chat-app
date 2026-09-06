@@ -15,7 +15,9 @@ function useSidebarData({
     try {
       const response = await authFetch("http://localhost:5000/api/users/me");
 
-      if (response.status === 401) return;
+      if (response.status === 401) {
+        return null;
+      }
 
       const data = await response.json();
 
@@ -40,9 +42,14 @@ function useSidebarData({
             ...data.user,
           }),
         );
+
+        return data.user;
       }
+
+      return null;
     } catch (error) {
       console.error("Failed to load current user:", error);
+      return null;
     }
   };
 
@@ -62,7 +69,47 @@ function useSidebarData({
     }
   };
 
-  const fetchConversations = async () => {
+  const getStoredUser = () => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "{}");
+    } catch {
+      return {};
+    }
+  };
+
+  const getPinnedIds = (items = []) => {
+    return new Map(
+      items.map((item, index) => [String(item?._id || item), index]),
+    );
+  };
+
+  const orderPinnedItems = (items, pinnedItems) => {
+    const pinnedOrder = getPinnedIds(pinnedItems);
+
+    const orderedItems = items.map((item) => ({
+      ...item,
+      isPinned: pinnedOrder.has(String(item._id)),
+    }));
+
+    const pinned = [];
+    const unpinned = [];
+
+    orderedItems.forEach((item) => {
+      if (item.isPinned) {
+        pinned.push(item);
+      } else {
+        unpinned.push(item);
+      }
+    });
+
+    pinned.sort(
+      (a, b) => pinnedOrder.get(String(a._id)) - pinnedOrder.get(String(b._id)),
+    );
+
+    return [...pinned, ...unpinned];
+  };
+
+  const fetchConversations = async (currentUser = null) => {
     try {
       const response = await authFetch(
         "http://localhost:5000/api/messages/dms",
@@ -73,7 +120,14 @@ function useSidebarData({
       const data = await response.json();
 
       if (response.ok) {
-        setConversations(data.conversations || []);
+        const user = currentUser || getStoredUser();
+
+        const conversations = orderPinnedItems(
+          data.conversations || [],
+          user?.pinnedDMs || [],
+        );
+
+        setConversations(conversations);
       }
     } catch (error) {
       console.error("Failed to load conversations:", error);
@@ -100,7 +154,7 @@ function useSidebarData({
     }
   };
 
-  const fetchClusters = async () => {
+  const fetchClusters = async (currentUser = null) => {
     try {
       const response = await authFetch(
         "http://localhost:5000/api/clusters/mine",
@@ -111,7 +165,14 @@ function useSidebarData({
       const data = await response.json();
 
       if (response.ok) {
-        setClusters(data.clusters || []);
+        const user = currentUser || getStoredUser();
+
+        const clusters = orderPinnedItems(
+          data.clusters || [],
+          user?.pinnedClusters || [],
+        );
+
+        setClusters(clusters);
       }
     } catch (error) {
       console.error("Failed to load Clusters:", error);
@@ -121,11 +182,18 @@ function useSidebarData({
   };
 
   useEffect(() => {
-    fetchCurrentUser();
-    fetchFriends();
-    fetchConversations();
-    fetchRequests();
-    fetchClusters();
+    const loadSidebarData = async () => {
+      const currentUser = await fetchCurrentUser();
+
+      await Promise.all([
+        fetchFriends(),
+        fetchConversations(currentUser),
+        fetchRequests(),
+        fetchClusters(currentUser),
+      ]);
+    };
+
+    loadSidebarData();
   }, []);
 
   return {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, MoreVertical, Bell } from "lucide-react";
+import { ArrowLeft, MessageCircle, MoreVertical, Bell } from "lucide-react";
 import Message from "../Message";
 import ClusterInvitationMessage from "../ClusterInvitationMessage";
 import MessageInput from "../MessageInput";
@@ -19,6 +19,7 @@ import { authFetch } from "../../../../shared/utils/authFetch";
 function ChatArea({
   selectedChat,
   onOpenProfile,
+  onMobileBack,
   onOpenOwnProfile,
   onSelectChat,
   onClusterUpdated,
@@ -914,9 +915,53 @@ function ChatArea({
     }
   }
 
+  const getSystemMessageText = (message) => {
+    const actorName =
+      message.sender?.displayName ||
+      message.sender?.username ||
+      message.senderUsername ||
+      "Someone";
+
+    const targetName =
+      message.systemTarget?.user?.displayName ||
+      message.systemTarget?.user?.username ||
+      message.systemTarget?.username ||
+      "Someone";
+
+    switch (message.systemAction) {
+      case "cluster_created":
+        return `${actorName} created the Cluster`;
+
+      case "member_joined":
+        return message.systemTarget?.user || message.systemTarget?.username
+          ? `${actorName} added ${targetName} to the Cluster`
+          : `${actorName} joined the Cluster`;
+
+      case "member_left":
+        return `${actorName} left the Cluster`;
+
+      case "member_removed":
+        return `${actorName} removed ${targetName} from the Cluster`;
+
+      case "ownership_transferred":
+        return `${actorName} transferred ownership to ${targetName}`;
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
-      <header className="relative z-20 flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-6">
+      <header className="relative z-20 flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-4 md:px-6">
+        <button
+          type="button"
+          onClick={onMobileBack}
+          className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-stone-100 hover:text-chime-text md:hidden"
+          aria-label="Back to sidebar"
+        >
+          <ArrowLeft size={21} strokeWidth={2} />
+        </button>
         {isDM && (
           <button
             type="button"
@@ -1056,6 +1101,7 @@ function ChatArea({
                   String(clusterVisibility).toLowerCase() === "private"
                 }
                 inviteCode={selectedChat.cluster?.inviteCode || ""}
+                placement="chat"
                 onMembers={handleOpenClusterMembers}
                 onSettings={handleOpenClusterSettings}
                 onTransferOwnership={handleTransferOwnership}
@@ -1107,6 +1153,25 @@ function ChatArea({
         ) : (
           <>
             {messages.map((message, index) => {
+              if (message.messageType === "system") {
+                const systemText = getSystemMessageText(message);
+
+                if (!systemText) {
+                  return null;
+                }
+
+                return (
+                  <div
+                    key={message._id}
+                    className="flex justify-center px-4 py-3"
+                  >
+                    <span className="text-xs font-medium text-chime-secondary">
+                      {systemText}
+                    </span>
+                  </div>
+                );
+              }
+
               const senderId = message.sender?._id || null;
               const isDeletedUser = !message.sender;
 
@@ -1126,11 +1191,13 @@ function ChatArea({
                 !isDeletedUser && String(senderId) === String(user._id);
 
               const previousMessage = messages[index - 1];
+
               const previousSenderId = previousMessage?.sender?._id || null;
               const previousIsDeletedUser = !previousMessage?.sender;
 
               const isSameSender =
                 previousMessage &&
+                previousMessage.messageType !== "system" &&
                 ((isDeletedUser && previousIsDeletedUser) ||
                   (!isDeletedUser &&
                     !previousIsDeletedUser &&

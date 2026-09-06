@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Check, Clock, UserPlus } from "lucide-react";
+import { Check, Clock, Heart, UserPlus } from "lucide-react";
 import useSidebarSocket from "../../hooks/useSidebarSocket";
 import useSidebarData from "../../hooks/useSidebarData";
 import useSidebarSearch from "../../hooks/useSidebarSearch";
@@ -15,17 +15,21 @@ import { authFetch } from "../../../../shared/utils/authFetch";
 function Sidebar({
   mobile = false,
   onClose,
+  sidebarSection,
+  onSidebarSectionChange,
   onSelectChat,
   onSelectCluster,
   onOpenDiscover,
   onOpenFriendRequests,
   onOpenProfile,
   onOpenUserProfile,
+  onOpenNotifications,
   onClusterUpdated,
   onClusterDeleted,
   onClusterMenuAction,
   onClusterMenuDeleteCluster,
   onClusterMenuWipeChat,
+  notificationUnreadCount = 0,
   activeView,
 }) {
   const [user, setUser] = useState(() => {
@@ -61,8 +65,6 @@ function Sidebar({
 
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingClusters, setLoadingClusters] = useState(true);
-
-  const [sidebarSection, setSidebarSection] = useState("dms");
 
   const [dmMenu, setDmMenu] = useState({
     isOpen: false,
@@ -242,6 +244,7 @@ function Sidebar({
     onClusterUpdated,
     onClusterJoined: handleClusterJoined,
     onClusterMemberJoined: handleClusterMemberJoined,
+    activeView,
   });
 
   useEffect(() => {
@@ -478,6 +481,266 @@ function Sidebar({
     setIsClearChatConfirmOpen(true);
   };
 
+  const handleDmPin = async (conversation) => {
+    const userId = conversation?._id;
+
+    if (!userId) {
+      return;
+    }
+
+    closeDmMenu();
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/users/pins/dm/${userId}`,
+        {
+          method: "POST",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to pin conversation");
+        return;
+      }
+
+      setConversations((currentConversations) =>
+        currentConversations.map((currentConversation) =>
+          String(currentConversation?._id) === String(userId)
+            ? {
+                ...currentConversation,
+                isPinned: true,
+              }
+            : currentConversation,
+        ),
+      );
+
+      setUser((currentUser) => {
+        if (!currentUser) {
+          return currentUser;
+        }
+
+        const pinnedDMs = currentUser.pinnedDMs || [];
+        const alreadyPinned = pinnedDMs.some(
+          (pinnedUser) =>
+            String(pinnedUser?._id || pinnedUser) === String(userId),
+        );
+
+        if (alreadyPinned) {
+          return currentUser;
+        }
+
+        const nextUser = {
+          ...currentUser,
+          pinnedDMs: [...pinnedDMs, userId],
+        };
+
+        localStorage.setItem("user", JSON.stringify(nextUser));
+
+        return nextUser;
+      });
+    } catch (error) {
+      console.error("Failed to pin conversation:", error);
+    }
+  };
+
+  const handleDmUnpin = async (conversation) => {
+    const userId = conversation?._id;
+
+    if (!userId) {
+      return;
+    }
+
+    closeDmMenu();
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/users/pins/dm/${userId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to unpin conversation");
+        return;
+      }
+
+      setConversations((currentConversations) =>
+        currentConversations.map((currentConversation) =>
+          String(currentConversation?._id) === String(userId)
+            ? {
+                ...currentConversation,
+                isPinned: false,
+              }
+            : currentConversation,
+        ),
+      );
+
+      setUser((currentUser) => {
+        if (!currentUser) {
+          return currentUser;
+        }
+
+        const nextUser = {
+          ...currentUser,
+          pinnedDMs: (currentUser.pinnedDMs || []).filter(
+            (pinnedUser) =>
+              String(pinnedUser?._id || pinnedUser) !== String(userId),
+          ),
+        };
+
+        localStorage.setItem("user", JSON.stringify(nextUser));
+
+        return nextUser;
+      });
+    } catch (error) {
+      console.error("Failed to unpin conversation:", error);
+    }
+  };
+
+  const handleClusterPin = async (cluster) => {
+    const clusterId = cluster?._id;
+
+    if (!clusterId) {
+      return;
+    }
+
+    closeClusterMenu();
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/users/pins/cluster/${clusterId}`,
+        {
+          method: "POST",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to pin Cluster");
+        return;
+      }
+
+      setClusters((currentClusters) => {
+        const updatedClusters = currentClusters.map((currentCluster) =>
+          String(currentCluster?._id) === String(clusterId)
+            ? {
+                ...currentCluster,
+                isPinned: true,
+              }
+            : currentCluster,
+        );
+
+        return [
+          ...updatedClusters.filter(
+            (currentCluster) => currentCluster.isPinned,
+          ),
+          ...updatedClusters.filter(
+            (currentCluster) => !currentCluster.isPinned,
+          ),
+        ];
+      });
+
+      setUser((currentUser) => {
+        if (!currentUser) {
+          return currentUser;
+        }
+
+        const pinnedClusters = currentUser.pinnedClusters || [];
+        const alreadyPinned = pinnedClusters.some(
+          (pinnedCluster) =>
+            String(pinnedCluster?._id || pinnedCluster) === String(clusterId),
+        );
+
+        if (alreadyPinned) {
+          return currentUser;
+        }
+
+        const nextUser = {
+          ...currentUser,
+          pinnedClusters: [...pinnedClusters, clusterId],
+        };
+
+        localStorage.setItem("user", JSON.stringify(nextUser));
+
+        return nextUser;
+      });
+    } catch (error) {
+      console.error("Failed to pin Cluster:", error);
+    }
+  };
+
+  const handleClusterUnpin = async (cluster) => {
+    const clusterId = cluster?._id;
+
+    if (!clusterId) {
+      return;
+    }
+
+    closeClusterMenu();
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/users/pins/cluster/${clusterId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to unpin Cluster");
+        return;
+      }
+
+      setClusters((currentClusters) => {
+        const updatedClusters = currentClusters.map((currentCluster) =>
+          String(currentCluster?._id) === String(clusterId)
+            ? {
+                ...currentCluster,
+                isPinned: false,
+              }
+            : currentCluster,
+        );
+
+        return [
+          ...updatedClusters.filter(
+            (currentCluster) => currentCluster.isPinned,
+          ),
+          ...updatedClusters.filter(
+            (currentCluster) => !currentCluster.isPinned,
+          ),
+        ];
+      });
+
+      setUser((currentUser) => {
+        if (!currentUser) {
+          return currentUser;
+        }
+
+        const nextUser = {
+          ...currentUser,
+          pinnedClusters: (currentUser.pinnedClusters || []).filter(
+            (pinnedCluster) =>
+              String(pinnedCluster?._id || pinnedCluster) !== String(clusterId),
+          ),
+        };
+
+        localStorage.setItem("user", JSON.stringify(nextUser));
+
+        return nextUser;
+      });
+    } catch (error) {
+      console.error("Failed to unpin Cluster:", error);
+    }
+  };
+
   const handleConfirmClearChat = async () => {
     const otherUserId = clearChatUser?._id;
 
@@ -644,6 +907,18 @@ function Sidebar({
     }
   };
 
+  const handleOpenNotifications = () => {
+    if (!onOpenNotifications) {
+      return;
+    }
+
+    onOpenNotifications();
+
+    if (mobile && onClose) {
+      onClose();
+    }
+  };
+
   const handleSelectConversation = (conversation) => {
     closeDmMenu();
 
@@ -802,8 +1077,8 @@ function Sidebar({
   return (
     <>
       <aside
-        className={`relative h-screen w-72 shrink-0 flex-col border-r border-stone-200 bg-chime-background ${
-          mobile ? "flex" : "hidden md:flex"
+        className={`relative h-screen shrink-0 flex-col border-r border-stone-200 bg-chime-background ${
+          mobile ? "flex w-full" : "hidden w-72 md:flex"
         }`}
       >
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 px-5">
@@ -828,16 +1103,22 @@ function Sidebar({
             <span className="text-[20px] leading-none">🔔</span>
           </button>
 
-          {mobile && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-2 text-chime-text transition hover:bg-chime-selected"
-              aria-label="Close sidebar"
-            >
-              <X size={22} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleOpenNotifications}
+            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+            aria-label="Open notifications"
+            title="Notifications"
+          >
+            <Heart size={19} />
+
+            {notificationUnreadCount > 0 && (
+              <span
+                className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-chime-gold"
+                aria-label="Unread notifications"
+              />
+            )}
+          </button>
         </div>
 
         <nav className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2">
@@ -859,7 +1140,7 @@ function Sidebar({
             <div className="flex h-9">
               <button
                 type="button"
-                onClick={() => setSidebarSection("dms")}
+                onClick={() => onSidebarSectionChange("dms")}
                 className={`relative flex-1 px-2 text-xs font-semibold transition ${
                   sidebarSection === "dms"
                     ? "text-chime-text"
@@ -883,7 +1164,7 @@ function Sidebar({
 
               <button
                 type="button"
-                onClick={() => setSidebarSection("clusters")}
+                onClick={() => onSidebarSectionChange("clusters")}
                 className={`relative flex-1 px-2 text-xs font-semibold transition ${
                   sidebarSection === "clusters"
                     ? "text-chime-text"
@@ -927,6 +1208,8 @@ function Sidebar({
                 onBlock={handleDmBlock}
                 onUnblock={handleDmUnblock}
                 onClearChat={handleDmClearChat}
+                onPinConversation={handleDmPin}
+                onUnpinConversation={handleDmUnpin}
                 renderPresenceIndicator={renderPresenceIndicator}
               />
             ) : (
@@ -950,6 +1233,8 @@ function Sidebar({
                 onClusterMenuDeleteCluster={handleClusterMenuDeleteCluster}
                 onClusterMenuWipeChat={handleClusterMenuWipeChat}
                 onClusterMenuLeave={handleClusterMenuLeave}
+                onPinCluster={handleClusterPin}
+                onUnpinCluster={handleClusterUnpin}
               />
             )}
           </div>

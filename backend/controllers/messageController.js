@@ -507,7 +507,7 @@ export const getDirectConversations = async (req, res) => {
     const conversations = await Conversation.find({
       participants: currentUserId,
     })
-      .sort({ updatedAt: -1 })
+      .sort({ createdAt: -1 })
       .populate(
         "participants",
         "username displayName email isDeleted profilePicture",

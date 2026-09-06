@@ -1,4 +1,5 @@
 import {
+  Pin,
   UserRound,
   UserMinus,
   UserRoundX,
@@ -13,6 +14,9 @@ function DmContextMenu({
   onBlock,
   onUnblock,
   onClearChat,
+  onPin,
+  onUnpin,
+  isPinned = false,
   showUnfriend = true,
   showBlock = true,
   showUnblock = false,
@@ -39,6 +43,18 @@ function DmContextMenu({
         event.stopPropagation();
       }}
     >
+      {placement === "sidebar" && (
+        <button
+          type="button"
+          onClick={isPinned ? onUnpin : onPin}
+          disabled={loading}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-chime-text transition hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Pin size={17} className="shrink-0 text-chime-secondary" />
+          <span>{isPinned ? "Unpin Conversation" : "Pin Conversation"}</span>
+        </button>
+      )}
+
       <button
         type="button"
         onClick={onViewProfile}
@@ -85,17 +101,21 @@ function DmContextMenu({
         </button>
       )}
 
-      <div className="my-1 border-t border-stone-200" />
+      {placement === "chat" && (
+        <>
+          <div className="my-1 border-t border-stone-200" />
 
-      <button
-        type="button"
-        onClick={onClearChat}
-        disabled={loading}
-        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <Trash2 size={17} className="shrink-0" />
-        <span>Clear Chat</span>
-      </button>
+          <button
+            type="button"
+            onClick={onClearChat}
+            disabled={loading}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 size={17} className="shrink-0" />
+            <span>Clear Chat</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }

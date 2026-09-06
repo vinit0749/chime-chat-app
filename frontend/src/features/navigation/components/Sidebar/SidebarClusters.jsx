@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { Pin, Plus } from "lucide-react";
 import ClusterContextMenu from "../../../clusters/components/ClusterContextMenu";
 
 function SidebarClusters({
@@ -21,6 +21,8 @@ function SidebarClusters({
   onClusterMenuDeleteCluster,
   onClusterMenuWipeChat,
   onClusterMenuLeave,
+  onPinCluster,
+  onUnpinCluster,
 }) {
   const [menuPosition, setMenuPosition] = useState(null);
   const menuRef = useRef(null);
@@ -81,6 +83,7 @@ function SidebarClusters({
     const isOwner =
       String(cluster.owner?._id || cluster.owner || "") === String(user?._id);
 
+    const isPinned = Boolean(cluster.isPinned);
     const unreadCount = formatUnreadCount(cluster.unreadCount);
 
     return (
@@ -141,6 +144,14 @@ function SidebarClusters({
             {cluster.name || "Unnamed Cluster"}
           </span>
 
+          {isPinned && (
+            <Pin
+              size={18}
+              strokeWidth={2.5}
+              className="shrink-0 rotate-45 text-chime-gold"
+            />
+          )}
+
           {unreadCount !== null && (
             <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-chime-gold px-2 text-[11px] font-bold text-chime-text">
               {unreadCount}
@@ -164,6 +175,10 @@ function SidebarClusters({
                 memberCount={cluster.memberCount || 0}
                 isPrivate={cluster.visibility === "private"}
                 inviteCode={cluster.inviteCode || ""}
+                placement="sidebar"
+                isPinned={isPinned}
+                onPin={() => onPinCluster(cluster)}
+                onUnpin={() => onUnpinCluster(cluster)}
                 onMembers={onClusterMenuMembers}
                 onSettings={onClusterMenuSettings}
                 onTransferOwnership={onClusterMenuTransferOwnership}

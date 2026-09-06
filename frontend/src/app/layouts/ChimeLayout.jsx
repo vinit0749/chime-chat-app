@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Menu } from "lucide-react";
 
 import Sidebar from "../../features/navigation/components/Sidebar/Sidebar";
 import ChatArea from "../../features/messaging/components/ChatArea/ChatArea";
@@ -7,14 +6,26 @@ import Friends from "../../features/friends/components/Friends";
 import Profile from "../../features/users/components/Profile";
 import PublicProfile from "../../features/users/components/PublicProfile";
 import DiscoverClusters from "../../features/clusters/components/DiscoverClusters";
+import Notifications from "../../features/notifications/components/Notifications";
+import useNotifications from "../../features/notifications/hooks/useNotifications";
 import { authFetch } from "../../shared/utils/authFetch";
 
 function ChimeLayout() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [activeView, setActiveView] = useState("chat");
+  const [mobileView, setMobileView] = useState("sidebar");
+  const [sidebarSection, setSidebarSection] = useState("dms");
   const [profileUserId, setProfileUserId] = useState(null);
   const [clusterMenuAction, setClusterMenuAction] = useState(null);
+
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    socket: notificationSocket,
+    markAllNotificationsRead,
+  } = useNotifications();
 
   useEffect(() => {
     if (!selectedChat || selectedChat.type !== "dm") {
@@ -71,7 +82,7 @@ function ChimeLayout() {
     setSelectedChat(chat);
     setProfileUserId(null);
     setActiveView("chat");
-    setIsSidebarOpen(false);
+    setMobileView(chat ? "chat" : "sidebar");
   };
 
   const handleSelectCluster = (cluster) => {
@@ -80,7 +91,7 @@ function ChimeLayout() {
       setSelectedChat(null);
       setProfileUserId(null);
       setActiveView("chat");
-      setIsSidebarOpen(false);
+      setMobileView("sidebar");
       return;
     }
 
@@ -91,7 +102,7 @@ function ChimeLayout() {
     });
     setProfileUserId(null);
     setActiveView("chat");
-    setIsSidebarOpen(false);
+    setMobileView("chat");
   };
 
   const handleClusterUpdated = useCallback((updatedCluster) => {
@@ -138,6 +149,7 @@ function ChimeLayout() {
     });
 
     setActiveView("chat");
+    setMobileView("sidebar");
   }, []);
 
   const handleClusterLeft = useCallback((clusterId) => {
@@ -160,6 +172,7 @@ function ChimeLayout() {
     });
 
     setActiveView("chat");
+    setMobileView("sidebar");
   }, []);
 
   const handleClusterMenuAction = useCallback((action, cluster) => {
@@ -190,7 +203,7 @@ function ChimeLayout() {
 
     setActiveView("chat");
     setProfileUserId(null);
-    setIsSidebarOpen(false);
+    setMobileView("chat");
 
     setClusterMenuAction({
       action,
@@ -221,7 +234,7 @@ function ChimeLayout() {
     setSelectedChat(null);
     setProfileUserId(null);
     setActiveView("discover");
-    setIsSidebarOpen(false);
+    setMobileView("discover");
   };
 
   const handleOpenFriends = () => {
@@ -229,7 +242,7 @@ function ChimeLayout() {
     setSelectedChat(null);
     setProfileUserId(null);
     setActiveView("friends");
-    setIsSidebarOpen(false);
+    setMobileView("friends");
   };
 
   const handleOpenProfile = () => {
@@ -237,7 +250,19 @@ function ChimeLayout() {
     setSelectedChat(null);
     setProfileUserId(null);
     setActiveView("profile");
-    setIsSidebarOpen(false);
+    setMobileView("profile");
+  };
+
+  const handleOpenNotifications = () => {
+    setClusterMenuAction(null);
+    setSelectedChat(null);
+    setProfileUserId(null);
+    setActiveView("notifications");
+    setMobileView("notifications");
+
+    if (unreadCount > 0) {
+      markAllNotificationsRead();
+    }
   };
 
   const handleOpenUserProfile = (userId) => {
@@ -252,7 +277,7 @@ function ChimeLayout() {
     setSelectedChat(null);
     setProfileUserId(actualUserId);
     setActiveView("public-profile");
-    setIsSidebarOpen(false);
+    setMobileView("public-profile");
   };
 
   const handleMessageFromProfile = (user) => {
@@ -269,123 +294,134 @@ function ChimeLayout() {
 
     setProfileUserId(null);
     setActiveView("chat");
-    setIsSidebarOpen(false);
+    setMobileView("chat");
+  };
+
+  const handleMobileBack = () => {
+    setClusterMenuAction(null);
+    setMobileView("sidebar");
   };
 
   const handleProfileBack = () => {
     setProfileUserId(null);
     setActiveView("chat");
+    setMobileView("sidebar");
+  };
+
+  const renderContent = () => {
+    if (activeView === "discover") {
+      return (
+        <DiscoverClusters
+          onSelectCluster={handleSelectCluster}
+          onBack={handleMobileBack}
+        />
+      );
+    }
+
+    if (activeView === "friends") {
+      return (
+        <Friends
+          onOpenProfile={handleOpenUserProfile}
+          onSelectChat={handleSelectChat}
+          onBack={handleMobileBack}
+        />
+      );
+    }
+
+    if (activeView === "profile") {
+      return <Profile onBack={handleProfileBack} />;
+    }
+
+    if (activeView === "public-profile") {
+      return (
+        <PublicProfile
+          userId={profileUserId}
+          onBack={handleProfileBack}
+          onMessage={handleMessageFromProfile}
+        />
+      );
+    }
+
+    if (activeView === "notifications") {
+      return (
+        <Notifications
+          onBack={handleMobileBack}
+          notifications={notifications}
+          unreadCount={unreadCount}
+          loading={notificationsLoading}
+          error={notificationsError}
+          socket={notificationSocket}
+        />
+      );
+    }
+
+    return (
+      <ChatArea
+        selectedChat={selectedChat}
+        onOpenProfile={handleOpenUserProfile}
+        onOpenOwnProfile={handleOpenProfile}
+        onSelectChat={handleSelectChat}
+        onClusterUpdated={handleClusterUpdated}
+        onClusterDeleted={handleClusterDeleted}
+        onClusterLeft={handleClusterLeft}
+        clusterMenuAction={clusterMenuAction}
+        onClusterMenuActionHandled={handleClusterMenuActionHandled}
+        onMobileBack={handleMobileBack}
+      />
+    );
   };
 
   return (
     <div className="flex h-screen min-w-0 overflow-hidden bg-chime-background">
-      <Sidebar
-        onSelectChat={handleSelectChat}
-        onSelectCluster={handleSelectCluster}
-        onOpenDiscover={handleDiscoverClusters}
-        onOpenFriendRequests={handleOpenFriends}
-        onOpenProfile={handleOpenProfile}
-        onOpenUserProfile={handleOpenUserProfile}
-        onClusterUpdated={handleClusterUpdated}
-        onClusterDeleted={handleClusterDeleted}
-        onClusterMenuAction={handleClusterMenuAction}
-        onClusterMenuDeleteCluster={handleClusterMenuDeleteCluster}
-        onClusterMenuWipeChat={handleClusterMenuWipeChat}
-        activeView={activeView}
-      />
+      <div className="hidden w-72 shrink-0 md:flex">
+        <Sidebar
+          sidebarSection={sidebarSection}
+          onSidebarSectionChange={setSidebarSection}
+          onSelectChat={handleSelectChat}
+          onSelectCluster={handleSelectCluster}
+          onOpenDiscover={handleDiscoverClusters}
+          onOpenFriendRequests={handleOpenFriends}
+          onOpenProfile={handleOpenProfile}
+          onOpenNotifications={handleOpenNotifications}
+          onOpenUserProfile={handleOpenUserProfile}
+          onClusterUpdated={handleClusterUpdated}
+          onClusterDeleted={handleClusterDeleted}
+          onClusterMenuAction={handleClusterMenuAction}
+          onClusterMenuDeleteCluster={handleClusterMenuDeleteCluster}
+          onClusterMenuWipeChat={handleClusterMenuWipeChat}
+          notificationUnreadCount={unreadCount}
+          activeView={activeView}
+        />
+      </div>
 
-      {isSidebarOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/30 md:hidden"
-            onClick={() => setIsSidebarOpen(false)}
-          />
+      <main className="flex min-w-0 flex-1">
+        <div className="hidden min-w-0 flex-1 md:flex">{renderContent()}</div>
 
-          <div className="fixed inset-y-0 left-0 z-50 md:hidden">
+        <div className="flex min-w-0 flex-1 md:hidden">
+          {mobileView === "sidebar" ? (
             <Sidebar
               mobile
-              onClose={() => setIsSidebarOpen(false)}
+              sidebarSection={sidebarSection}
+              onSidebarSectionChange={setSidebarSection}
               onSelectChat={handleSelectChat}
               onSelectCluster={handleSelectCluster}
               onOpenDiscover={handleDiscoverClusters}
               onOpenFriendRequests={handleOpenFriends}
               onOpenProfile={handleOpenProfile}
+              onOpenNotifications={handleOpenNotifications}
               onOpenUserProfile={handleOpenUserProfile}
               onClusterUpdated={handleClusterUpdated}
               onClusterDeleted={handleClusterDeleted}
               onClusterMenuAction={handleClusterMenuAction}
               onClusterMenuDeleteCluster={handleClusterMenuDeleteCluster}
               onClusterMenuWipeChat={handleClusterMenuWipeChat}
+              notificationUnreadCount={unreadCount}
               activeView={activeView}
             />
-          </div>
-        </>
-      )}
-
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-4 md:hidden">
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="rounded-lg p-2 text-chime-text transition hover:bg-chime-selected"
-            aria-label="Open sidebar"
-          >
-            <Menu size={24} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedChat(null);
-              setProfileUserId(null);
-              setActiveView("chat");
-            }}
-            className="ml-3 flex items-center gap-2 text-left"
-            aria-label="Go to Chime home"
-          >
-            <span className="relative text-[27px] font-black uppercase tracking-[0.1em] text-chime-text">
-              <span className="absolute left-0 top-1 text-chime-gold/30">
-                CHIME
-              </span>
-
-              <span className="relative">
-                CH<span className="text-chime-gold">I</span>ME
-              </span>
-
-              <span className="absolute -bottom-1 left-0 h-0.5 w-full bg-chime-gold/70" />
-            </span>
-
-            <span className="text-[20px] leading-none">🔔</span>
-          </button>
-        </header>
-
-        {activeView === "discover" ? (
-          <DiscoverClusters onSelectCluster={handleSelectCluster} />
-        ) : activeView === "friends" ? (
-          <Friends
-            onOpenProfile={handleOpenUserProfile}
-            onSelectChat={handleSelectChat}
-          />
-        ) : activeView === "profile" ? (
-          <Profile onBack={handleProfileBack} />
-        ) : activeView === "public-profile" ? (
-          <PublicProfile
-            userId={profileUserId}
-            onBack={handleProfileBack}
-            onMessage={handleMessageFromProfile}
-          />
-        ) : (
-          <ChatArea
-            selectedChat={selectedChat}
-            onOpenProfile={handleOpenUserProfile}
-            onOpenOwnProfile={handleOpenProfile}
-            onSelectChat={handleSelectChat}
-            onClusterUpdated={handleClusterUpdated}
-            onClusterDeleted={handleClusterDeleted}
-            onClusterLeft={handleClusterLeft}
-            clusterMenuAction={clusterMenuAction}
-            onClusterMenuActionHandled={handleClusterMenuActionHandled}
-          />
-        )}
+          ) : (
+            renderContent()
+          )}
+        </div>
       </main>
     </div>
   );

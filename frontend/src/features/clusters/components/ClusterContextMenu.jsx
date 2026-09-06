@@ -8,6 +8,8 @@ import {
   LogOut,
   Info,
   Trash2,
+  Pin,
+  Eraser,
 } from "lucide-react";
 
 function ClusterContextMenu({
@@ -22,6 +24,10 @@ function ClusterContextMenu({
   onDeleteCluster,
   onInfo,
   onLeaveCluster,
+  onPin,
+  onUnpin,
+  isPinned = false,
+  placement = "sidebar",
   loading = false,
 }) {
   const [copied, setCopied] = useState(false);
@@ -54,6 +60,18 @@ function ClusterContextMenu({
         event.stopPropagation();
       }}
     >
+      {placement === "sidebar" && (
+        <button
+          type="button"
+          onClick={isPinned ? onUnpin : onPin}
+          disabled={loading}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-chime-text transition hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Pin size={17} className="shrink-0 text-chime-secondary" />
+          <span>{isPinned ? "Unpin Cluster" : "Pin Cluster"}</span>
+        </button>
+      )}
+
       {isPrivate && inviteCode && (
         <div className="my-1 border-y border-stone-200 px-3 py-2.5">
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-chime-secondary">
@@ -129,17 +147,21 @@ function ClusterContextMenu({
             </button>
           )}
 
-          <div className="my-1 border-t border-stone-200" />
+          {placement === "chat" && (
+            <>
+              <div className="my-1 border-t border-stone-200" />
 
-          <button
-            type="button"
-            onClick={onWipeChat}
-            disabled={loading}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Trash2 size={17} className="shrink-0" />
-            <span>Wipe Chat</span>
-          </button>
+              <button
+                type="button"
+                onClick={onWipeChat}
+                disabled={loading}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Eraser size={17} className="shrink-0" />
+                <span>Wipe Chat</span>
+              </button>
+            </>
+          )}
         </>
       ) : (
         <>

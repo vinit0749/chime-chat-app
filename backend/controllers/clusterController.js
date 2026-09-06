@@ -4,6 +4,10 @@ import ClusterMember from "../models/ClusterMember.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 import cloudinary from "../config/cloudinary.js";
+import {
+  createNotification,
+  deleteNotification,
+} from "../utils/notificationService.js";
 
 const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(id);
@@ -120,6 +124,41 @@ const emitClusterMemberUpdate = async (clusterId, emitToUser) => {
     },
     emitToUser,
   );
+};
+
+const createClusterSystemMessage = async ({
+  clusterId,
+  actorId,
+  actorUsername,
+  action,
+  targetUserId = null,
+  targetUsername = "",
+}) => {
+  const message = await Message.create({
+    sender: actorId,
+    senderUsername: actorUsername,
+    recipient: null,
+    cluster: clusterId,
+    messageType: "system",
+    systemAction: action,
+    systemTarget: {
+      user: targetUserId,
+      username: targetUsername,
+    },
+    content: "",
+    status: "delivered",
+  });
+
+  await message.populate("sender", "username displayName profilePicture");
+
+  if (message.systemTarget?.user) {
+    await message.populate(
+      "systemTarget.user",
+      "username displayName profilePicture",
+    );
+  }
+
+  return message;
 };
 
 export const createCluster = async (req, res) => {
@@ -248,6 +287,17 @@ export const createCluster = async (req, res) => {
       throw error;
     }
 
+    const creator = await User.findById(userId).select(
+      "username displayName profilePicture",
+    );
+
+    const systemMessage = await createClusterSystemMessage({
+      clusterId: cluster._id,
+      actorId: userId,
+      actorUsername: creator.username,
+      action: "cluster_created",
+    });
+
     await cluster.populate("owner", "username displayName profilePicture");
 
     const formattedCluster = await formatCluster(cluster, {
@@ -261,6 +311,11 @@ export const createCluster = async (req, res) => {
     if (emitToUser) {
       emitToUser(userId, "cluster_joined", {
         cluster: formattedCluster,
+      });
+
+      emitToUser(userId, "cluster_message_received", {
+        clusterId: String(cluster._id),
+        message: systemMessage,
       });
     }
 
@@ -333,7 +388,7 @@ export const getMyClusters = async (req, res) => {
           select: "username displayName profilePicture",
         },
       })
-      .sort({ updatedAt: -1 });
+      .sort({ createdAt: 1 });
 
     const formattedClusters = await Promise.all(
       memberships
@@ -349,6 +404,7 @@ export const getMyClusters = async (req, res) => {
           const unreadQuery = {
             cluster: cluster._id,
             sender: { $ne: userId },
+            messageType: { $ne: "system" },
           };
 
           if (membership.lastReadMessage) {
@@ -504,6 +560,15 @@ export const addClusterMember = async (req, res) => {
       });
     }
 
+    const systemMessage = await createClusterSystemMessage({
+      clusterId,
+      actorId: currentUserId,
+      actorUsername: req.user.username,
+      action: "member_joined",
+      targetUserId: userId,
+      targetUsername: user.username,
+    });
+
     const formattedCluster = await formatCluster(cluster, {
       role: "member",
       membershipStatus: "active",
@@ -519,6 +584,22 @@ export const addClusterMember = async (req, res) => {
       emitToUser(userIdString, "cluster_joined", {
         cluster: formattedCluster,
       });
+
+      emitToUser(userIdString, "cluster_message_received", {
+        clusterId: clusterIdString,
+        message: systemMessage,
+      });
+
+      await emitToClusterMembers(
+        clusterId,
+        "cluster_message_received",
+        {
+          clusterId: clusterIdString,
+          message: systemMessage,
+        },
+        emitToUser,
+        userIdString,
+      );
     }
 
     await emitClusterMemberUpdate(clusterId, emitToUser);
@@ -581,6 +662,17 @@ export const joinPublicCluster = async (req, res) => {
       existingMembership.role = "member";
       await existingMembership.save();
 
+      const user = await User.findById(userId).select(
+        "username displayName profilePicture",
+      );
+
+      const systemMessage = await createClusterSystemMessage({
+        clusterId,
+        actorId: userId,
+        actorUsername: user.username,
+        action: "member_joined",
+      });
+
       const formattedCluster = await formatCluster(cluster, {
         role: "member",
         membershipStatus: "active",
@@ -593,6 +685,22 @@ export const joinPublicCluster = async (req, res) => {
         emitToUser(userId, "cluster_joined", {
           cluster: formattedCluster,
         });
+
+        emitToUser(userId, "cluster_message_received", {
+          clusterId: String(clusterId),
+          message: systemMessage,
+        });
+
+        await emitToClusterMembers(
+          clusterId,
+          "cluster_message_received",
+          {
+            clusterId: String(clusterId),
+            message: systemMessage,
+          },
+          emitToUser,
+          userId,
+        );
       }
 
       await emitClusterMemberUpdate(clusterId, emitToUser);
@@ -610,6 +718,17 @@ export const joinPublicCluster = async (req, res) => {
       role: "member",
     });
 
+    const user = await User.findById(userId).select(
+      "username displayName profilePicture",
+    );
+
+    const systemMessage = await createClusterSystemMessage({
+      clusterId,
+      actorId: userId,
+      actorUsername: user.username,
+      action: "member_joined",
+    });
+
     const formattedCluster = await formatCluster(cluster, {
       role: membership.role,
       membershipStatus: membership.status,
@@ -622,6 +741,22 @@ export const joinPublicCluster = async (req, res) => {
       emitToUser(userId, "cluster_joined", {
         cluster: formattedCluster,
       });
+
+      emitToUser(userId, "cluster_message_received", {
+        clusterId: String(clusterId),
+        message: systemMessage,
+      });
+
+      await emitToClusterMembers(
+        clusterId,
+        "cluster_message_received",
+        {
+          clusterId: String(clusterId),
+          message: systemMessage,
+        },
+        emitToUser,
+        userId,
+      );
     }
 
     await emitClusterMemberUpdate(clusterId, emitToUser);
@@ -708,6 +843,17 @@ export const joinPrivateCluster = async (req, res) => {
 
     const emitToUser = req.app.get("emitToUser");
 
+    await createNotification({
+      recipient: cluster.owner._id,
+      type: "cluster_join_request",
+      actor: userId,
+      target: cluster._id,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
+
     if (emitToUser) {
       emitToUser(String(cluster.owner._id), "cluster_join_request", {
         clusterId: String(cluster._id),
@@ -763,6 +909,17 @@ export const leaveCluster = async (req, res) => {
       });
     }
 
+    const user = await User.findById(userId).select(
+      "username displayName profilePicture",
+    );
+
+    const systemMessage = await createClusterSystemMessage({
+      clusterId,
+      actorId: userId,
+      actorUsername: user.username,
+      action: "member_left",
+    });
+
     await ClusterMember.deleteOne({
       _id: membership._id,
     });
@@ -781,6 +938,16 @@ export const leaveCluster = async (req, res) => {
     }
 
     if (cluster) {
+      await emitToClusterMembers(
+        clusterId,
+        "cluster_message_received",
+        {
+          clusterId: String(clusterId),
+          message: systemMessage,
+        },
+        emitToUser,
+      );
+
       await emitClusterMemberUpdate(clusterId, emitToUser);
     }
 
@@ -848,6 +1015,17 @@ export const requestToJoinCluster = async (req, res) => {
     );
 
     const emitToUser = req.app.get("emitToUser");
+
+    await createNotification({
+      recipient: cluster.owner._id,
+      type: "cluster_join_request",
+      actor: userId,
+      target: cluster._id,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
 
     if (emitToUser) {
       emitToUser(String(cluster.owner._id), "cluster_join_request", {
@@ -960,20 +1138,68 @@ export const approveClusterJoinRequest = async (req, res) => {
       });
     }
 
+    const user = await User.findById(userId).select(
+      "username displayName profilePicture",
+    );
+
     membership.status = "active";
     membership.role = "member";
 
     await membership.save();
 
+    const systemMessage = await createClusterSystemMessage({
+      clusterId,
+      actorId: userId,
+      actorUsername: user.username,
+      action: "member_joined",
+    });
+
     const memberCount = await getMemberCount(clusterId);
 
     const emitToUser = req.app.get("emitToUser");
+
+    await deleteNotification({
+      recipient: currentUserId,
+      type: "cluster_join_request",
+      target: clusterId,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
+
+    await createNotification({
+      recipient: userId,
+      type: "cluster_join_request_approved",
+      actor: currentUserId,
+      target: clusterId,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
 
     if (emitToUser) {
       emitToUser(String(userId), "cluster_join_request_approved", {
         clusterId: String(clusterId),
       });
+
+      emitToUser(String(userId), "cluster_message_received", {
+        clusterId: String(clusterId),
+        message: systemMessage,
+      });
     }
+
+    await emitToClusterMembers(
+      clusterId,
+      "cluster_message_received",
+      {
+        clusterId: String(clusterId),
+        message: systemMessage,
+      },
+      emitToUser,
+      userId,
+    );
 
     await emitClusterMemberUpdate(clusterId, emitToUser);
 
@@ -1035,6 +1261,27 @@ export const rejectClusterJoinRequest = async (req, res) => {
     });
 
     const emitToUser = req.app.get("emitToUser");
+
+    await deleteNotification({
+      recipient: currentUserId,
+      type: "cluster_join_request",
+      target: clusterId,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
+
+    await createNotification({
+      recipient: userId,
+      type: "cluster_join_request_rejected",
+      actor: currentUserId,
+      target: clusterId,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
 
     if (emitToUser) {
       emitToUser(String(userId), "cluster_join_request_rejected", {
@@ -1389,6 +1636,10 @@ export const transferClusterOwnership = async (req, res) => {
       });
     }
 
+    const newOwner = await User.findById(userId).select(
+      "username displayName profilePicture",
+    );
+
     cluster.owner = userId;
     await cluster.save();
 
@@ -1397,6 +1648,15 @@ export const transferClusterOwnership = async (req, res) => {
 
     newOwnerMembership.role = "owner";
     await newOwnerMembership.save();
+
+    const systemMessage = await createClusterSystemMessage({
+      clusterId,
+      actorId: currentUserId,
+      actorUsername: req.user.username,
+      action: "ownership_transferred",
+      targetUserId: userId,
+      targetUsername: newOwner.username,
+    });
 
     await cluster.populate("owner", "username displayName profilePicture");
 
@@ -1411,6 +1671,17 @@ export const transferClusterOwnership = async (req, res) => {
     const io = req.app.get("io");
     const emitToUser = req.app.get("emitToUser");
 
+    await createNotification({
+      recipient: userId,
+      type: "cluster_ownership_transferred",
+      actor: currentUserId,
+      target: clusterId,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
+
     if (io) {
       io.to(getClusterRoom(clusterId)).emit(
         "cluster_ownership_transferred",
@@ -1422,6 +1693,16 @@ export const transferClusterOwnership = async (req, res) => {
       clusterId,
       "cluster_ownership_transferred",
       eventData,
+      emitToUser,
+    );
+
+    await emitToClusterMembers(
+      clusterId,
+      "cluster_message_received",
+      {
+        clusterId: String(clusterId),
+        message: systemMessage,
+      },
       emitToUser,
     );
 
@@ -1497,6 +1778,19 @@ export const kickClusterMember = async (req, res) => {
       });
     }
 
+    const removedUser = await User.findById(userId).select(
+      "username displayName profilePicture",
+    );
+
+    const systemMessage = await createClusterSystemMessage({
+      clusterId,
+      actorId: currentUserId,
+      actorUsername: req.user.username,
+      action: "member_removed",
+      targetUserId: userId,
+      targetUsername: removedUser.username,
+    });
+
     await ClusterMember.deleteOne({
       _id: membership._id,
     });
@@ -1512,6 +1806,17 @@ export const kickClusterMember = async (req, res) => {
     const io = req.app.get("io");
     const emitToUser = req.app.get("emitToUser");
 
+    await createNotification({
+      recipient: userId,
+      type: "cluster_member_removed",
+      actor: currentUserId,
+      target: clusterId,
+      targetType: "Cluster",
+      emitToUser: (recipient, event, data) => {
+        emitToUser?.(String(recipient), event, data);
+      },
+    });
+
     if (io) {
       io.to(getClusterRoom(clusterId)).emit("cluster_member_kicked", kickData);
     }
@@ -1521,6 +1826,16 @@ export const kickClusterMember = async (req, res) => {
         clusterId: clusterIdString,
       });
     }
+
+    await emitToClusterMembers(
+      clusterId,
+      "cluster_message_received",
+      {
+        clusterId: clusterIdString,
+        message: systemMessage,
+      },
+      emitToUser,
+    );
 
     await emitClusterMemberUpdate(clusterId, emitToUser);
 

@@ -12,14 +12,17 @@ import messageRoutes from "../routes/messageRoutes.js";
 import userRoutes from "../routes/userRoutes.js";
 import friendRoutes from "../routes/friendRoutes.js";
 import clusterRoutes from "../routes/clusterRoutes.js";
+import notificationRoutes from "../routes/notificationRoutes.js";
 
 import Message from "../models/Message.js";
+import Notification from "../models/Notification.js";
 import User from "../models/User.js";
 import Friendship from "../models/Friendship.js";
 import Cluster from "../models/Cluster.js";
 import ClusterMember from "../models/ClusterMember.js";
 
 import getOrCreateConversation from "../utils/conversation.js";
+import { createNotification } from "../utils/notificationService.js";
 
 dotenv.config();
 
@@ -45,6 +48,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/friends", friendRoutes);
 app.use("/api/clusters", clusterRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.get("/", (req, res) => {
   res.send("Chime backend is running!");
@@ -872,6 +876,15 @@ io.on("connection", (socket) => {
         emitToUser(recipientId, "new_message", message);
       }
 
+      await createNotification({
+        recipient: recipientId,
+        type: "dm",
+        actor: userId,
+        target: conversation._id,
+        targetType: "Conversation",
+        emitToUser,
+      });
+
       const conversationUpdate = {
         conversationId: conversation._id.toString(),
         userId: recipientId,
@@ -1078,6 +1091,16 @@ io.on("connection", (socket) => {
         emitToUser(recipientId, "new_message", message);
       }
 
+      await createNotification({
+        recipient: recipientId,
+        type: "cluster_invitation",
+        actor: userId,
+        target: cluster._id,
+        targetType: "Cluster",
+        reference: message._id,
+        emitToUser,
+      });
+
       const conversationUpdate = {
         conversationId: conversation._id.toString(),
         userId: recipientId,
@@ -1157,6 +1180,32 @@ io.on("connection", (socket) => {
         invitation.clusterInvite.status = "rejected";
         await invitation.save();
 
+        const notification = await Notification.findOneAndUpdate(
+          {
+            recipient: userId,
+            type: "cluster_invitation",
+            target: clusterId,
+            targetType: "Cluster",
+          },
+          {
+            $set: {
+              actionStatus: "declined",
+              read: true,
+            },
+          },
+          {
+            new: true,
+          },
+        );
+
+        if (notification) {
+          emitToUser(userId, "notification_updated", {
+            notificationId: String(notification._id),
+            read: true,
+            actionStatus: "declined",
+          });
+        }
+
         emitToUser(invitation.sender.toString(), "cluster_invitation_updated", {
           messageId: invitation._id.toString(),
           status: "rejected",
@@ -1191,6 +1240,32 @@ io.on("connection", (socket) => {
         invitation.status = "read";
 
         await invitation.save();
+
+        const notification = await Notification.findOneAndUpdate(
+          {
+            recipient: userId,
+            type: "cluster_invitation",
+            target: clusterId,
+            targetType: "Cluster",
+          },
+          {
+            $set: {
+              actionStatus: "accepted",
+              read: true,
+            },
+          },
+          {
+            new: true,
+          },
+        );
+
+        if (notification) {
+          emitToUser(userId, "notification_updated", {
+            notificationId: String(notification._id),
+            read: true,
+            actionStatus: "accepted",
+          });
+        }
 
         const [updatedCluster, memberCount] = await Promise.all([
           Cluster.findById(cluster._id).populate(
@@ -1243,6 +1318,32 @@ io.on("connection", (socket) => {
       invitation.clusterInvite.status = "rejected";
 
       await invitation.save();
+
+      const notification = await Notification.findOneAndUpdate(
+        {
+          recipient: userId,
+          type: "cluster_invitation",
+          target: clusterId,
+          targetType: "Cluster",
+        },
+        {
+          $set: {
+            actionStatus: "declined",
+            read: true,
+          },
+        },
+        {
+          new: true,
+        },
+      );
+
+      if (notification) {
+        emitToUser(userId, "notification_updated", {
+          notificationId: String(notification._id),
+          read: true,
+          actionStatus: "declined",
+        });
+      }
 
       emitToUser(invitation.sender.toString(), "cluster_invitation_updated", {
         messageId: invitation._id.toString(),

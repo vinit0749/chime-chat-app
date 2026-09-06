@@ -22,13 +22,11 @@ const userSchema = new mongoose.Schema(
       default: "",
     },
 
-    // Cloudinary profile picture URL
     profilePicture: {
       type: String,
       default: "",
     },
 
-    // Cloudinary public ID used to replace/delete the image later
     profilePicturePublicId: {
       type: String,
       default: "",
@@ -47,21 +45,6 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
-    /*
-      User's manually selected presence status.
-
-      online:
-      User wants to appear online.
-      They will only actually appear online to others
-      while they have an active Socket.IO connection.
-
-      away:
-      User wants to appear away while connected.
-
-      invisible:
-      User appears offline to everyone else even
-      while they are connected.
-    */
     status: {
       type: String,
       enum: ["online", "away", "invisible"],
@@ -73,7 +56,6 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
-    // Accepted friends
     friends: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -81,7 +63,6 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Friend requests sent by this user
     friendRequestsSent: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -89,7 +70,6 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Friend requests received by this user
     friendRequestsReceived: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -97,11 +77,24 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // Users this user has blocked
     blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
+      },
+    ],
+
+    pinnedDMs: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
+    pinnedClusters: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Cluster",
       },
     ],
   },

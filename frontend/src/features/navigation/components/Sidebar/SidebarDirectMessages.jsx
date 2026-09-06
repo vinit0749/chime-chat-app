@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import DmContextMenu from "../../../messaging/components/DmContextMenu";
 
@@ -20,6 +21,8 @@ function SidebarDirectMessages({
   onBlock,
   onUnblock,
   onClearChat,
+  onPinConversation,
+  onUnpinConversation,
   renderPresenceIndicator,
 }) {
   const [menuPosition, setMenuPosition] = useState(null);
@@ -77,6 +80,7 @@ function SidebarDirectMessages({
 
             const isBlockedByMe = blockedUserIds.has(conversationId);
             const isBlockedByOther = blockedByUserIds.has(conversationId);
+            const isPinned = Boolean(conversation.isPinned);
             const unreadCount = formatUnreadCount(conversation.unreadCount);
 
             return (
@@ -131,6 +135,14 @@ function SidebarDirectMessages({
                     {conversation.displayName || `@${conversation.username}`}
                   </span>
 
+                  {isPinned && (
+                    <Pin
+                      size={18}
+                      strokeWidth={2.5}
+                      className="shrink-0 rotate-45 text-chime-gold"
+                    />
+                  )}
+
                   {unreadCount !== null && (
                     <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-chime-gold px-2 text-[11px] font-bold text-chime-text">
                       {unreadCount}
@@ -156,6 +168,9 @@ function SidebarDirectMessages({
                         onBlock={onBlock}
                         onUnblock={onUnblock}
                         onClearChat={() => onClearChat(conversation)}
+                        onPin={() => onPinConversation(conversation)}
+                        onUnpin={() => onUnpinConversation(conversation)}
+                        isPinned={isPinned}
                         showUnfriend={isFriend(conversation._id)}
                         showBlock={!isBlockedByMe && !isBlockedByOther}
                         showUnblock={isBlockedByMe}

@@ -2,15 +2,11 @@ import express from "express";
 import multer from "multer";
 import authMiddleware from "../middleware/authMiddleware.js";
 import User from "../models/User.js";
+import Cluster from "../models/Cluster.js";
+import ClusterMember from "../models/ClusterMember.js";
 import cloudinary from "../config/cloudinary.js";
 
 const router = express.Router();
-
-/*
-  ============================================================
-  MULTER CONFIGURATION
-  ============================================================
-*/
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -19,16 +15,10 @@ const upload = multer({
   },
 });
 
-/*
-  ============================================================
-  GET CURRENT USER'S PROFILE
-  ============================================================
-*/
-
 router.get("/me", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select(
-      "username displayName bio profilePicture status",
+      "username displayName bio profilePicture status pinnedDMs pinnedClusters",
     );
 
     if (!user || user.isDeleted) {
@@ -49,12 +39,6 @@ router.get("/me", authMiddleware, async (req, res) => {
   }
 });
 
-/*
-  ============================================================
-  UPDATE CURRENT USER'S PROFILE
-  ============================================================
-*/
-
 router.put("/me", authMiddleware, async (req, res) => {
   try {
     const { username, displayName, bio, status } = req.body;
@@ -69,9 +53,6 @@ router.put("/me", authMiddleware, async (req, res) => {
 
     const previousStatus = user.status;
 
-    /*
-      Username
-    */
     if (username !== undefined) {
       const normalizedUsername = username.trim().toLowerCase();
 
@@ -98,23 +79,14 @@ router.put("/me", authMiddleware, async (req, res) => {
       }
     }
 
-    /*
-      Display name
-    */
     if (displayName !== undefined) {
       user.displayName = displayName.trim();
     }
 
-    /*
-      Bio
-    */
     if (bio !== undefined) {
       user.bio = bio.trim();
     }
 
-    /*
-      Presence status
-    */
     if (status !== undefined) {
       if (!["online", "away", "invisible"].includes(status)) {
         return res.status(400).json({
@@ -127,12 +99,6 @@ router.put("/me", authMiddleware, async (req, res) => {
 
     await user.save();
 
-    /*
-      Broadcast status changes immediately.
-
-      server.js is responsible for applying block privacy
-      when distributing presence to individual users.
-    */
     if (status !== undefined && previousStatus !== user.status) {
       const io = req.app.get("io");
 
@@ -149,10 +115,6 @@ router.put("/me", authMiddleware, async (req, res) => {
           effectiveStatus = user.status || "online";
         }
 
-        /*
-          server.js now handles recipient-specific block privacy.
-          This event is kept for compatibility with existing clients.
-        */
         io.emit("presence_update", {
           userId: user._id.toString(),
           status: effectiveStatus,
@@ -179,12 +141,6 @@ router.put("/me", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  UPLOAD / REPLACE PROFILE PICTURE
-  ============================================================
-*/
 
 router.put(
   "/me/profile-picture",
@@ -268,11 +224,215 @@ router.put(
   },
 );
 
-/*
-  ============================================================
-  SEARCH USERS
-  ============================================================
-*/
+router.post("/pins/dm/:userId", authMiddleware, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.userId);
+
+    if (!currentUser || currentUser.isDeleted) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const targetUser = await User.findById(req.params.userId);
+
+    if (!targetUser || targetUser.isDeleted) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    if (String(targetUser._id) === String(currentUser._id)) {
+      return res.status(400).json({
+        message: "You cannot pin yourself",
+      });
+    }
+
+    if (
+      !currentUser.friends.some((id) => String(id) === String(targetUser._id))
+    ) {
+      return res.status(403).json({
+        message: "You can only pin conversations with friends",
+      });
+    }
+
+    if (
+      !currentUser.pinnedDMs.some((id) => String(id) === String(targetUser._id))
+    ) {
+      currentUser.pinnedDMs.push(targetUser._id);
+      await currentUser.save();
+    }
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.to(`user:${currentUser._id}`).emit("conversation_pin_updated", {
+        type: "dm",
+        targetId: String(targetUser._id),
+        pinned: true,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Conversation pinned",
+      type: "dm",
+      targetId: String(targetUser._id),
+      pinned: true,
+    });
+  } catch (error) {
+    console.error("Pin DM error:", error);
+
+    return res.status(500).json({
+      message: "Failed to pin conversation",
+    });
+  }
+});
+
+router.delete("/pins/dm/:userId", authMiddleware, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.userId);
+
+    if (!currentUser || currentUser.isDeleted) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    currentUser.pinnedDMs = currentUser.pinnedDMs.filter(
+      (id) => String(id) !== String(req.params.userId),
+    );
+
+    await currentUser.save();
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.to(`user:${currentUser._id}`).emit("conversation_pin_updated", {
+        type: "dm",
+        targetId: String(req.params.userId),
+        pinned: false,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Conversation unpinned",
+      type: "dm",
+      targetId: String(req.params.userId),
+      pinned: false,
+    });
+  } catch (error) {
+    console.error("Unpin DM error:", error);
+
+    return res.status(500).json({
+      message: "Failed to unpin conversation",
+    });
+  }
+});
+
+router.post("/pins/cluster/:clusterId", authMiddleware, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.userId);
+
+    if (!currentUser || currentUser.isDeleted) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const cluster = await Cluster.findById(req.params.clusterId);
+
+    if (!cluster || cluster.isDeleted) {
+      return res.status(404).json({
+        message: "Cluster not found",
+      });
+    }
+
+    const membership = await ClusterMember.findOne({
+      cluster: cluster._id,
+      user: currentUser._id,
+      status: "active",
+    });
+
+    if (!membership) {
+      return res.status(403).json({
+        message: "You must be a Cluster member to pin it",
+      });
+    }
+
+    if (
+      !currentUser.pinnedClusters.some(
+        (id) => String(id) === String(cluster._id),
+      )
+    ) {
+      currentUser.pinnedClusters.push(cluster._id);
+      await currentUser.save();
+    }
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.to(`user:${currentUser._id}`).emit("conversation_pin_updated", {
+        type: "cluster",
+        targetId: String(cluster._id),
+        pinned: true,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Cluster pinned",
+      type: "cluster",
+      targetId: String(cluster._id),
+      pinned: true,
+    });
+  } catch (error) {
+    console.error("Pin Cluster error:", error);
+
+    return res.status(500).json({
+      message: "Failed to pin Cluster",
+    });
+  }
+});
+
+router.delete("/pins/cluster/:clusterId", authMiddleware, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.userId);
+
+    if (!currentUser || currentUser.isDeleted) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    currentUser.pinnedClusters = currentUser.pinnedClusters.filter(
+      (id) => String(id) !== String(req.params.clusterId),
+    );
+
+    await currentUser.save();
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.to(`user:${currentUser._id}`).emit("conversation_pin_updated", {
+        type: "cluster",
+        targetId: String(req.params.clusterId),
+        pinned: false,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Cluster unpinned",
+      type: "cluster",
+      targetId: String(req.params.clusterId),
+      pinned: false,
+    });
+  } catch (error) {
+    console.error("Unpin Cluster error:", error);
+
+    return res.status(500).json({
+      message: "Failed to unpin Cluster",
+    });
+  }
+});
 
 router.get("/search", authMiddleware, async (req, res) => {
   try {
@@ -340,12 +500,6 @@ router.get("/search", authMiddleware, async (req, res) => {
   }
 });
 
-/*
-  ============================================================
-  GET ANOTHER USER'S PUBLIC PROFILE
-  ============================================================
-*/
-
 router.get("/:userId", authMiddleware, async (req, res) => {
   try {
     const currentUser = await User.findById(req.user.userId).select(
@@ -370,13 +524,6 @@ router.get("/:userId", authMiddleware, async (req, res) => {
 
     const targetUserId = user._id.toString();
 
-    /*
-      Determine the current relationship.
-
-      Blocked relationships are intentionally treated separately
-      so the profile cannot offer a friend request while blocking
-      is still active.
-    */
     const isBlocked =
       currentUser.blockedUsers?.some(
         (blockedId) => blockedId.toString() === targetUserId,
@@ -426,12 +573,6 @@ router.get("/:userId", authMiddleware, async (req, res) => {
     });
   }
 });
-
-/*
-  ============================================================
-  DELETE CURRENT ACCOUNT
-  ============================================================
-*/
 
 router.delete("/me", authMiddleware, async (req, res) => {
   try {

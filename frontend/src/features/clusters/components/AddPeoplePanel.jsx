@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Search, UserPlus, Users, X } from "lucide-react";
 import { authFetch } from "../../../shared/utils/authFetch";
 import ConfirmModal from "../../../shared/components/ConfirmModal";
@@ -17,6 +17,14 @@ function AddPeoplePanel({
   const [addingUserId, setAddingUserId] = useState(null);
   const [addedUserIds, setAddedUserIds] = useState([]);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setAddedUserIds((currentIds) =>
+      currentIds.filter((id) =>
+        members.some((member) => String(member?.user?._id) === String(id)),
+      ),
+    );
+  }, [members]);
 
   const isMember = (userId) => {
     return members.some(
@@ -78,7 +86,13 @@ function AddPeoplePanel({
         return;
       }
 
-      setAddedUserIds((currentIds) => [...currentIds, user._id]);
+      setAddedUserIds((currentIds) => {
+        if (currentIds.some((id) => String(id) === String(user._id))) {
+          return currentIds;
+        }
+
+        return [...currentIds, user._id];
+      });
 
       onMemberAdded?.({
         ...user,

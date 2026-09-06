@@ -40,12 +40,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
 
   const [isUnblocking, setIsUnblocking] = useState(false);
 
-  /*
-    ============================================================
-    LOAD PUBLIC PROFILE
-    ============================================================
-  */
-
   const fetchProfile = useCallback(
     async (showLoading = false) => {
       if (!userId) {
@@ -78,12 +72,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
           profilePicture: data.user.profilePicture || "",
         });
 
-        /*
-          relationshipStatus is authoritative.
-
-          Fall back to isFriend for compatibility with any
-          older backend response.
-        */
         setRelationshipStatus(
           data.user.relationshipStatus ||
             (data.user.isFriend ? "friends" : "none"),
@@ -103,18 +91,9 @@ function PublicProfile({ userId, onBack, onMessage }) {
     [userId],
   );
 
-  /*
-    Initial profile load.
-  */
   useEffect(() => {
     fetchProfile(true);
   }, [fetchProfile]);
-
-  /*
-    ============================================================
-    REAL-TIME RELATIONSHIP SYNC
-    ============================================================
-  */
 
   useEffect(() => {
     if (!userId) {
@@ -127,52 +106,25 @@ function PublicProfile({ userId, onBack, onMessage }) {
       return;
     }
 
-    const normalizedProfileId = String(userId);
-
     const socket = io(SOCKET_URL, {
       auth: {
         token,
       },
     });
 
-    /*
-      Any relationship-changing event involving this profile
-      causes the profile to immediately retrieve the authoritative
-      relationship state from the backend.
-
-      This is NOT refresh-dependent.
-
-      The Socket.IO event is what triggers the synchronization.
-    */
     const syncRelationship = () => {
       fetchProfile(false);
     };
 
-    /*
-      Friend request events.
-    */
     socket.on("friend_request_received", syncRelationship);
     socket.on("friend_request_sent", syncRelationship);
     socket.on("friend_request_accepted", syncRelationship);
     socket.on("friend_request_rejected", syncRelationship);
-
-    /*
-      Friendship removal.
-    */
     socket.on("friend_removed", syncRelationship);
-
-    /*
-      Blocking events.
-    */
     socket.on("user_blocked", syncRelationship);
     socket.on("user_blocked_by_other", syncRelationship);
     socket.on("user_unblocked", syncRelationship);
 
-    /*
-      If the socket connection is established after the initial
-      profile request, sync once so the realtime view starts from
-      the latest backend state.
-    */
     socket.on("connect", () => {
       fetchProfile(false);
     });
@@ -182,24 +134,15 @@ function PublicProfile({ userId, onBack, onMessage }) {
       socket.off("friend_request_sent", syncRelationship);
       socket.off("friend_request_accepted", syncRelationship);
       socket.off("friend_request_rejected", syncRelationship);
-
       socket.off("friend_removed", syncRelationship);
-
       socket.off("user_blocked", syncRelationship);
       socket.off("user_blocked_by_other", syncRelationship);
       socket.off("user_unblocked", syncRelationship);
-
       socket.off("connect");
 
       socket.disconnect();
     };
   }, [userId, fetchProfile]);
-
-  /*
-    ============================================================
-    MESSAGE
-    ============================================================
-  */
 
   const handleMessage = () => {
     if (!profile._id || !onMessage) {
@@ -218,12 +161,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
       isFriend: true,
     });
   };
-
-  /*
-    ============================================================
-    SEND FRIEND REQUEST
-    ============================================================
-  */
 
   const handleSendFriendRequest = async () => {
     if (
@@ -251,15 +188,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
         return;
       }
 
-      /*
-        Immediate local update.
-      */
       setRelationshipStatus("sent");
-
-      /*
-        The Socket.IO event will also synchronize this profile
-        with the authoritative backend state.
-      */
       fetchProfile(false);
     } catch (error) {
       console.error("Failed to send friend request:", error);
@@ -267,12 +196,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
       setIsFriendRequestLoading(false);
     }
   };
-
-  /*
-    ============================================================
-    ACCEPT FRIEND REQUEST
-    ============================================================
-  */
 
   const handleAcceptFriendRequest = async () => {
     if (
@@ -300,14 +223,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
         return;
       }
 
-      /*
-        Immediate local update.
-      */
       setRelationshipStatus("friends");
-
-      /*
-        Socket.IO also synchronizes every affected client.
-      */
       fetchProfile(false);
     } catch (error) {
       console.error("Failed to accept friend request:", error);
@@ -315,12 +231,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
       setIsFriendRequestLoading(false);
     }
   };
-
-  /*
-    ============================================================
-    UNFRIEND
-    ============================================================
-  */
 
   const handleUnfriendClick = () => {
     if (relationshipStatus !== "friends") {
@@ -360,18 +270,8 @@ function PublicProfile({ userId, onBack, onMessage }) {
         return;
       }
 
-      /*
-        Immediately update this profile.
-
-        No refresh required.
-      */
       setRelationshipStatus("none");
       setShowUnfriendModal(false);
-
-      /*
-        Socket.IO friend_removed will synchronize the other
-        connected client as well.
-      */
       fetchProfile(false);
     } catch (error) {
       console.error("Failed to unfriend user:", error);
@@ -379,12 +279,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
       setIsUnfriending(false);
     }
   };
-
-  /*
-    ============================================================
-    BLOCK
-    ============================================================
-  */
 
   const handleBlockClick = () => {
     if (!profile._id || isBlocking) {
@@ -424,15 +318,9 @@ function PublicProfile({ userId, onBack, onMessage }) {
         return;
       }
 
-      /*
-        Immediately update the public profile.
-      */
       setRelationshipStatus("blocked");
       setShowBlockModal(false);
 
-      /*
-        Keep locally cached current user synchronized.
-      */
       try {
         const storedUser = JSON.parse(localStorage.getItem("user") || "null");
 
@@ -459,9 +347,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
         console.error("Failed to synchronize local user state:", storageError);
       }
 
-      /*
-        Socket.IO will synchronize other connected clients.
-      */
       fetchProfile(false);
     } catch (error) {
       console.error("Failed to block user:", error);
@@ -469,12 +354,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
       setIsBlocking(false);
     }
   };
-
-  /*
-    ============================================================
-    UNBLOCK
-    ============================================================
-  */
 
   const handleUnblock = async () => {
     if (!profile._id || isUnblocking) {
@@ -498,14 +377,8 @@ function PublicProfile({ userId, onBack, onMessage }) {
         return;
       }
 
-      /*
-        Unblocking does NOT restore the friendship.
-      */
       setRelationshipStatus("none");
 
-      /*
-        Keep localStorage synchronized immediately.
-      */
       try {
         const storedUser = JSON.parse(localStorage.getItem("user") || "null");
 
@@ -529,9 +402,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
         console.error("Failed to synchronize local user state:", storageError);
       }
 
-      /*
-        Socket.IO will synchronize other connected clients.
-      */
       fetchProfile(false);
     } catch (error) {
       console.error("Failed to unblock user:", error);
@@ -540,23 +410,15 @@ function PublicProfile({ userId, onBack, onMessage }) {
     }
   };
 
-  /*
-    ============================================================
-    RELATIONSHIP ACTION
-    ============================================================
-  */
-
   const renderRelationshipAction = () => {
     if (relationshipStatus === "friends") {
       return (
         <div className="flex w-full flex-col items-start gap-3">
-          {/* Friends status */}
           <div className="inline-flex items-center gap-2 rounded-full bg-chime-gold/20 px-3 py-2 text-xs font-bold text-chime-text">
             <UserCheck size={14} />
             Friends
           </div>
 
-          {/* Friend actions */}
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -680,12 +542,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
     );
   };
 
-  /*
-    ============================================================
-    LOADING
-    ============================================================
-  */
-
   if (loading) {
     return (
       <section className="flex min-h-0 flex-1 items-center justify-center bg-chime-background">
@@ -694,17 +550,12 @@ function PublicProfile({ userId, onBack, onMessage }) {
     );
   }
 
-  /*
-    ============================================================
-    ERROR
-    ============================================================
-  */
-
   if (error) {
     return (
       <section className="flex min-h-0 flex-1 flex-col bg-chime-background">
         <header className="flex h-16 shrink-0 items-center border-b border-stone-200 px-5 md:px-8">
           <button
+            type="button"
             onClick={onBack}
             className="mr-3 rounded-lg p-2 text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
             aria-label="Back"
@@ -736,9 +587,9 @@ function PublicProfile({ userId, onBack, onMessage }) {
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-chime-background">
-      {/* Header */}
       <header className="flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-5 md:px-8">
         <button
+          type="button"
           onClick={onBack}
           className="mr-3 rounded-lg p-2 text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
           aria-label="Back"
@@ -753,15 +604,11 @@ function PublicProfile({ userId, onBack, onMessage }) {
         </div>
       </header>
 
-      {/* Profile */}
       <div className="min-h-0 flex-1">
-        {/* Banner */}
         <div className="h-36 w-full bg-chime-gold md:h-44" />
 
-        {/* Profile Body */}
         <div className="px-5 pb-12 md:px-10 lg:px-14">
           <div className="relative mx-auto max-w-5xl">
-            {/* Avatar */}
             <div className="-mt-12 flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-[6px] border-chime-background bg-chime-bright text-chime-text shadow-md md:-mt-14 md:h-32 md:w-32">
               {profile.profilePicture ? (
                 <img
@@ -774,7 +621,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
               )}
             </div>
 
-            {/* Identity */}
             <div className="mt-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="min-w-0">
                 <h2 className="text-3xl font-extrabold tracking-tight text-chime-text md:text-4xl">
@@ -785,16 +631,13 @@ function PublicProfile({ userId, onBack, onMessage }) {
                   @{profile.username}
                 </p>
 
-                {/* Actions */}
                 <div className="mt-5 flex flex-wrap items-start gap-3">
                   {renderRelationshipAction()}
                 </div>
               </div>
             </div>
 
-            {/* Profile Information */}
             <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
-              {/* About */}
               <div className="rounded-2xl border border-stone-200 bg-chime-chat p-6 md:p-7">
                 <h3 className="text-sm font-bold text-chime-text">About</h3>
 
@@ -803,7 +646,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
                 </p>
               </div>
 
-              {/* Member Information */}
               <div className="rounded-2xl border border-stone-200 bg-chime-chat p-6 md:p-7">
                 <h3 className="text-sm font-bold text-chime-text">
                   Member Information
@@ -842,7 +684,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
         </div>
       </div>
 
-      {/* Unfriend Confirmation */}
       <ConfirmModal
         isOpen={showUnfriendModal}
         title={`Unfriend ${displayName}?`}
@@ -854,7 +695,6 @@ function PublicProfile({ userId, onBack, onMessage }) {
         loading={isUnfriending}
       />
 
-      {/* Block Confirmation */}
       <ConfirmModal
         isOpen={showBlockModal}
         title={`Block ${displayName}?`}

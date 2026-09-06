@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
   Check,
   UserMinus,
   XCircle,
@@ -13,7 +14,7 @@ import {
 import { authFetch } from "../../../shared/utils/authFetch";
 import ConfirmModal from "../../../shared/components/ConfirmModal";
 
-function FriendRequests({ onOpenProfile, onSelectChat }) {
+function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
   const [requests, setRequests] = useState([]);
   const [friends, setFriends] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -337,6 +338,15 @@ function FriendRequests({ onOpenProfile, onSelectChat }) {
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
       <header className="flex min-h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-4 sm:px-6">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text md:hidden"
+          aria-label="Back to sidebar"
+        >
+          <ArrowLeft size={20} />
+        </button>
+
         <div className="min-w-0">
           <h2 className="text-base font-bold text-chime-text sm:text-lg">
             Friends

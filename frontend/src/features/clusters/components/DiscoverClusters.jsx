@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Compass, Globe, LogIn, Search, Users, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Compass,
+  Globe,
+  LogIn,
+  Search,
+  Users,
+  X,
+} from "lucide-react";
 import { authFetch } from "../../../shared/utils/authFetch";
 
-function DiscoverClusters({ onSelectCluster }) {
+function DiscoverClusters({ onSelectCluster, onBack }) {
   const [clusters, setClusters] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [search, setSearch] = useState("");
@@ -121,7 +129,16 @@ function DiscoverClusters({ onSelectCluster }) {
       <header className="shrink-0 border-b border-stone-200">
         <div className="mx-auto w-full max-w-6xl px-6 py-7 lg:px-8">
           <div className="flex flex-col gap-7">
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text md:hidden"
+                aria-label="Back to sidebar"
+              >
+                <ArrowLeft size={20} />
+              </button>
+
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-chime-gold text-chime-text shadow-sm">
                 <Compass size={21} strokeWidth={2.2} />
               </div>

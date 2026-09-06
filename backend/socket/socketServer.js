@@ -20,6 +20,7 @@ import User from "../models/User.js";
 import Friendship from "../models/Friendship.js";
 import Cluster from "../models/Cluster.js";
 import ClusterMember from "../models/ClusterMember.js";
+import Conversation from "../models/Conversation.js";
 
 import getOrCreateConversation from "../utils/conversation.js";
 import { createNotification } from "../utils/notificationService.js";
@@ -810,7 +811,14 @@ io.on("connection", (socket) => {
         return;
       }
 
+      const existingConversation = await getExistingConversation(
+        userId,
+        recipientId,
+      );
+
       const conversation = await getOrCreateConversation(userId, recipientId);
+
+      const isFirstMessage = !existingConversation;
 
       let validReplyTo = null;
 
@@ -876,14 +884,16 @@ io.on("connection", (socket) => {
         emitToUser(recipientId, "new_message", message);
       }
 
-      await createNotification({
-        recipient: recipientId,
-        type: "dm",
-        actor: userId,
-        target: conversation._id,
-        targetType: "Conversation",
-        emitToUser,
-      });
+      if (isFirstMessage) {
+        await createNotification({
+          recipient: recipientId,
+          type: "dm",
+          actor: userId,
+          target: conversation._id,
+          targetType: "Conversation",
+          emitToUser,
+        });
+      }
 
       const conversationUpdate = {
         conversationId: conversation._id.toString(),
@@ -1453,6 +1463,20 @@ io.on("connection", (socket) => {
     }
   })();
 });
+
+const getExistingConversation = async (userId, otherUserId) => {
+  const participants = [
+    new mongoose.Types.ObjectId(userId),
+    new mongoose.Types.ObjectId(otherUserId),
+  ].sort((a, b) => a.toString().localeCompare(b.toString()));
+
+  return Conversation.findOne({
+    participants: {
+      $all: participants,
+      $size: 2,
+    },
+  });
+};
 
 connectDB();
 

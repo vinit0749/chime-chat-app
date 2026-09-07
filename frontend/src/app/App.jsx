@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import Login from "../features/auth/pages/Login";
 import Register from "../features/auth/pages/Register";
 import ChimeLayout from "./layouts/ChimeLayout";
+import OAuthSuccess from "./pages/OAuthSuccess";
 
 import ProtectedRoute from "../features/auth/components/ProtectedRoute";
 import PublicRoute from "../features/auth/components/PublicRoute";
@@ -14,6 +15,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+
+        <Route path="/oauth-success" element={<OAuthSuccess />} />
 
         {/* Routes for logged-out users */}
         <Route element={<PublicRoute />}>

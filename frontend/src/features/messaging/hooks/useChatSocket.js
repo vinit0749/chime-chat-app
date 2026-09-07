@@ -20,6 +20,7 @@ function useChatSocket({
   onClusterDeleted,
   onClusterJoined,
   onClusterMemberJoined,
+  onUserDeleted,
   setClusterTypingUsers,
 }) {
   const [socket, setSocket] = useState(null);
@@ -29,6 +30,7 @@ function useChatSocket({
   const onClusterDeletedRef = useRef(onClusterDeleted);
   const onClusterJoinedRef = useRef(onClusterJoined);
   const onClusterMemberJoinedRef = useRef(onClusterMemberJoined);
+  const onUserDeletedRef = useRef(onUserDeleted);
 
   useEffect(() => {
     userRef.current = user;
@@ -49,6 +51,10 @@ function useChatSocket({
   useEffect(() => {
     onClusterMemberJoinedRef.current = onClusterMemberJoined;
   }, [onClusterMemberJoined]);
+
+  useEffect(() => {
+    onUserDeletedRef.current = onUserDeleted;
+  }, [onUserDeleted]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -170,6 +176,27 @@ function useChatSocket({
       setIsOtherUserTyping(false);
       setReplyingTo(null);
       setEditingMessage(null);
+    });
+
+    newSocket.on("user_deleted", ({ userId }) => {
+      if (!userId) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (
+        currentChat?.type === "dm" &&
+        String(currentChat.user?._id) === String(userId)
+      ) {
+        setIsDmMenuOpen(false);
+        setIsOtherUserTyping(false);
+        setReplyingTo(null);
+        setEditingMessage(null);
+        setMessages([]);
+      }
+
+      onUserDeletedRef.current?.(String(userId));
     });
 
     newSocket.on("cluster_updated", (updatedCluster) => {

@@ -21,6 +21,7 @@ function useSidebarSocket({
   onClusterUpdated,
   onClusterJoined,
   onClusterMemberJoined,
+  onClusterDeleted,
   activeView,
 }) {
   const blockedUserIdsRef = useRef(blockedUserIds);
@@ -32,6 +33,7 @@ function useSidebarSocket({
   const onClusterUpdatedRef = useRef(onClusterUpdated);
   const onClusterJoinedRef = useRef(onClusterJoined);
   const onClusterMemberJoinedRef = useRef(onClusterMemberJoined);
+  const onClusterDeletedRef = useRef(onClusterDeleted);
 
   useEffect(() => {
     blockedUserIdsRef.current = blockedUserIds;
@@ -64,6 +66,10 @@ function useSidebarSocket({
   useEffect(() => {
     onClusterMemberJoinedRef.current = onClusterMemberJoined;
   }, [onClusterMemberJoined]);
+
+  useEffect(() => {
+    onClusterDeletedRef.current = onClusterDeleted;
+  }, [onClusterDeleted]);
 
   const userId = user?._id ? String(user._id) : null;
 
@@ -157,51 +163,79 @@ function useSidebarSocket({
       const message = data.message || data;
       const sender = message.sender || data.sender;
 
-      if (!sender?._id || String(sender._id) === String(userId)) {
+      if (!sender?._id) {
         return;
       }
 
       const senderId = String(sender._id);
+      const currentUserId = String(userId);
+      const isOwnMessage = senderId === currentUserId;
+
+      const otherUser = isOwnMessage
+        ? message.recipient || data.recipient
+        : sender;
+
+      if (!otherUser?._id) {
+        return;
+      }
+
+      const otherUserId = String(otherUser._id);
 
       if (
-        blockedUserIdsRef.current.has(senderId) ||
-        blockedByUserIdsRef.current.has(senderId)
+        blockedUserIdsRef.current.has(otherUserId) ||
+        blockedByUserIdsRef.current.has(otherUserId)
       ) {
         return;
       }
 
       setConversations((currentConversations) => {
         const existingIndex = currentConversations.findIndex(
-          (conversation) => String(conversation._id) === senderId,
+          (conversation) => String(conversation?._id) === otherUserId,
         );
 
-        if (existingIndex === -1) {
-          return [
-            ...currentConversations,
-            {
-              _id: sender._id,
-              username: sender.username || "",
-              displayName: sender.displayName || "",
-              email: sender.email || "",
-              profilePicture: sender.profilePicture || "",
-              unreadCount: 1,
-              isPinned: false,
-            },
-          ];
-        }
+        const updatedConversation = {
+          ...(existingIndex === -1 ? {} : currentConversations[existingIndex]),
+          _id: otherUser._id,
+          username:
+            otherUser.username ||
+            (existingIndex === -1
+              ? ""
+              : currentConversations[existingIndex].username),
+          displayName:
+            otherUser.displayName ||
+            (existingIndex === -1
+              ? ""
+              : currentConversations[existingIndex].displayName),
+          email:
+            otherUser.email ||
+            (existingIndex === -1
+              ? ""
+              : currentConversations[existingIndex].email),
+          profilePicture:
+            otherUser.profilePicture ||
+            (existingIndex === -1
+              ? ""
+              : currentConversations[existingIndex].profilePicture || ""),
+          unreadCount: isOwnMessage
+            ? existingIndex === -1
+              ? 0
+              : currentConversations[existingIndex].unreadCount || 0
+            : existingIndex === -1
+              ? 1
+              : (currentConversations[existingIndex].unreadCount || 0) + 1,
+          isPinned:
+            existingIndex === -1
+              ? false
+              : currentConversations[existingIndex].isPinned || false,
+          lastMessageAt:
+            message.createdAt || message.updatedAt || new Date().toISOString(),
+        };
 
-        return currentConversations.map((conversation, index) =>
-          index === existingIndex
-            ? {
-                ...conversation,
-                username: sender.username || conversation.username,
-                displayName: sender.displayName || conversation.displayName,
-                profilePicture:
-                  sender.profilePicture || conversation.profilePicture || "",
-                unreadCount: (conversation.unreadCount || 0) + 1,
-              }
-            : conversation,
+        const nextConversations = currentConversations.filter(
+          (_, index) => index !== existingIndex,
         );
+
+        return [updatedConversation, ...nextConversations];
       });
     });
 
@@ -224,44 +258,123 @@ function useSidebarSocket({
       );
     });
 
-    socket.on("cluster_message_received", (data) => {
-      if (!data) {
+    socket.on("user_profile_updated", (data) => {
+      const updatedUser = data?.user || data;
+
+      if (!updatedUser?._id) {
         return;
       }
 
-      const message = data.message || data;
-      const clusterId = String(
-        data.clusterId || message.cluster?._id || message.cluster || "",
+      const updatedUserId = String(updatedUser._id);
+
+      if (updatedUserId === String(userId)) {
+        setUser((currentUser) => {
+          if (!currentUser) {
+            return currentUser;
+          }
+
+          const nextUser = {
+            ...currentUser,
+            username: updatedUser.username ?? currentUser.username,
+            displayName: updatedUser.displayName ?? currentUser.displayName,
+            bio: updatedUser.bio ?? currentUser.bio,
+            profilePicture:
+              updatedUser.profilePicture ?? currentUser.profilePicture,
+            status: updatedUser.status ?? currentUser.status,
+          };
+
+          localStorage.setItem("user", JSON.stringify(nextUser));
+
+          return nextUser;
+        });
+      }
+
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) =>
+          String(friend?._id) === updatedUserId
+            ? {
+                ...friend,
+                username: updatedUser.username ?? friend.username,
+                displayName: updatedUser.displayName ?? friend.displayName,
+                profilePicture:
+                  updatedUser.profilePicture ?? friend.profilePicture ?? "",
+                status: updatedUser.status ?? friend.status,
+              }
+            : friend,
+        ),
       );
 
-      if (!clusterId) {
-        return;
-      }
-
-      if (
-        message.sender?._id &&
-        String(message.sender._id) === String(userId)
-      ) {
-        return;
-      }
-
-      if (message.messageType === "system") {
-        return;
-      }
-
-      if (activeView === `cluster-${clusterId}`) {
-        return;
-      }
-
-      setClusters((currentClusters) =>
-        currentClusters.map((cluster) =>
-          String(cluster._id) === clusterId
+      setConversations((currentConversations) =>
+        currentConversations.map((conversation) =>
+          String(conversation?._id) === updatedUserId
             ? {
-                ...cluster,
-                unreadCount: (Number(cluster.unreadCount) || 0) + 1,
+                ...conversation,
+                username: updatedUser.username ?? conversation.username,
+                displayName:
+                  updatedUser.displayName ?? conversation.displayName,
+                profilePicture:
+                  updatedUser.profilePicture ??
+                  conversation.profilePicture ??
+                  "",
               }
-            : cluster,
+            : conversation,
         ),
+      );
+
+      setRequests((currentRequests) =>
+        currentRequests.map((request) => {
+          const requesterId = String(
+            request?.requester?._id || request?.requester || "",
+          );
+
+          const recipientId = String(
+            request?.recipient?._id || request?.recipient || "",
+          );
+
+          if (requesterId === updatedUserId && request.requester) {
+            return {
+              ...request,
+              requester:
+                typeof request.requester === "object"
+                  ? {
+                      ...request.requester,
+                      username:
+                        updatedUser.username ?? request.requester.username,
+                      displayName:
+                        updatedUser.displayName ??
+                        request.requester.displayName,
+                      profilePicture:
+                        updatedUser.profilePicture ??
+                        request.requester.profilePicture ??
+                        "",
+                    }
+                  : request.requester,
+            };
+          }
+
+          if (recipientId === updatedUserId && request.recipient) {
+            return {
+              ...request,
+              recipient:
+                typeof request.recipient === "object"
+                  ? {
+                      ...request.recipient,
+                      username:
+                        updatedUser.username ?? request.recipient.username,
+                      displayName:
+                        updatedUser.displayName ??
+                        request.recipient.displayName,
+                      profilePicture:
+                        updatedUser.profilePicture ??
+                        request.recipient.profilePicture ??
+                        "",
+                    }
+                  : request.recipient,
+            };
+          }
+
+          return request;
+        }),
       );
     });
 
@@ -520,6 +633,69 @@ function useSidebarSocket({
         const nextPresence = { ...currentPresence };
         delete nextPresence[unblockedId];
         return nextPresence;
+      });
+    });
+
+    socket.on("user_deleted", (data) => {
+      const deletedUserId = String(data?.userId || "");
+
+      if (!deletedUserId) {
+        return;
+      }
+
+      setConversations((currentConversations) =>
+        currentConversations.filter(
+          (conversation) => String(conversation?._id) !== deletedUserId,
+        ),
+      );
+
+      setFriends((currentFriends) =>
+        currentFriends.filter(
+          (friend) => String(friend?._id) !== deletedUserId,
+        ),
+      );
+
+      setRequests((currentRequests) =>
+        currentRequests.filter((request) => {
+          const requesterId = String(
+            request?.requester?._id || request?.requester || "",
+          );
+
+          const recipientId = String(
+            request?.recipient?._id || request?.recipient || "",
+          );
+
+          return requesterId !== deletedUserId && recipientId !== deletedUserId;
+        }),
+      );
+
+      setBlockedUserIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(deletedUserId);
+        return nextIds;
+      });
+
+      setBlockedByUserIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(deletedUserId);
+        return nextIds;
+      });
+
+      setPresence((currentPresence) => {
+        const nextPresence = { ...currentPresence };
+        delete nextPresence[deletedUserId];
+        return nextPresence;
+      });
+
+      setDmMenu((currentMenu) => {
+        if (String(currentMenu.user?._id) === deletedUserId) {
+          return {
+            isOpen: false,
+            user: null,
+          };
+        }
+
+        return currentMenu;
       });
     });
 
@@ -876,6 +1052,8 @@ function useSidebarSocket({
 
         return currentMenu;
       });
+
+      onClusterDeletedRef.current?.(clusterId);
     });
 
     socket.on("cluster_membership_updated", () => {

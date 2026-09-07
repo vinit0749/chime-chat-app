@@ -25,6 +25,8 @@ function ChimeLayout() {
     error: notificationsError,
     socket: notificationSocket,
     markAllNotificationsRead,
+    deleteNotification,
+    deleteAllNotifications,
   } = useNotifications();
 
   useEffect(() => {
@@ -152,6 +154,27 @@ function ChimeLayout() {
     setMobileView("sidebar");
   }, []);
 
+  const handleUserDeleted = useCallback((userId) => {
+    if (!userId) {
+      return;
+    }
+
+    setSelectedChat((currentChat) => {
+      if (
+        !currentChat ||
+        currentChat.type !== "dm" ||
+        String(currentChat.user?._id) !== String(userId)
+      ) {
+        return currentChat;
+      }
+
+      return null;
+    });
+
+    setActiveView("chat");
+    setMobileView("sidebar");
+  }, []);
+
   const handleClusterLeft = useCallback((clusterId) => {
     if (!clusterId) {
       return;
@@ -237,6 +260,14 @@ function ChimeLayout() {
     setMobileView("discover");
   };
 
+  const handleDiscoverBack = () => {
+    setClusterMenuAction(null);
+    setSelectedChat(null);
+    setProfileUserId(null);
+    setActiveView("chat");
+    setMobileView("sidebar");
+  };
+
   const handleOpenFriends = () => {
     setClusterMenuAction(null);
     setSelectedChat(null);
@@ -299,6 +330,7 @@ function ChimeLayout() {
 
   const handleMobileBack = () => {
     setClusterMenuAction(null);
+    setActiveView("chat");
     setMobileView("sidebar");
   };
 
@@ -313,7 +345,7 @@ function ChimeLayout() {
       return (
         <DiscoverClusters
           onSelectCluster={handleSelectCluster}
-          onBack={handleMobileBack}
+          onBack={handleDiscoverBack}
         />
       );
     }
@@ -351,6 +383,8 @@ function ChimeLayout() {
           loading={notificationsLoading}
           error={notificationsError}
           socket={notificationSocket}
+          deleteNotification={deleteNotification}
+          deleteAllNotifications={deleteAllNotifications}
         />
       );
     }
@@ -359,6 +393,7 @@ function ChimeLayout() {
       <ChatArea
         selectedChat={selectedChat}
         onOpenProfile={handleOpenUserProfile}
+        onUserDeleted={handleUserDeleted}
         onOpenOwnProfile={handleOpenProfile}
         onSelectChat={handleSelectChat}
         onClusterUpdated={handleClusterUpdated}

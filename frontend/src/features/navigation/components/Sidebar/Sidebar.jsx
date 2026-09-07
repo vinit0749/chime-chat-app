@@ -1131,7 +1131,7 @@ function Sidebar({
               onSearchChange={setSearch}
               onOpenProfile={handleOpenSearchProfile}
               onMessageUser={handleMessageSearchUser}
-              renderRelationshipButton={renderRelationshipButton}
+              onAddFriend={openSendRequestModal}
               renderPresenceIndicator={renderPresenceIndicator}
             />
           </div>

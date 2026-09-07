@@ -5,6 +5,7 @@ function ClusterInvitationMessage({
   isOwnMessage,
   onRespond,
   responding = false,
+  onOpenProfile,
 }) {
   const cluster = message?.clusterInvite?.cluster;
   const status = message?.clusterInvite?.status || "pending";
@@ -14,6 +15,8 @@ function ClusterInvitationMessage({
 
   const senderName =
     message?.sender?.displayName || message?.sender?.username || "User";
+
+  const senderId = message?.sender?._id;
 
   const formattedTime = message?.createdAt
     ? new Date(message.createdAt).toLocaleTimeString([], {
@@ -30,6 +33,14 @@ function ClusterInvitationMessage({
     onRespond?.(message._id, action);
   };
 
+  const handleOpenProfile = () => {
+    if (!senderId || !onOpenProfile) {
+      return;
+    }
+
+    onOpenProfile(senderId);
+  };
+
   const statusContent = {
     accepted: isOwnMessage ? "Invitation accepted" : "You joined this Cluster",
     rejected: "Invitation rejected",
@@ -38,11 +49,21 @@ function ClusterInvitationMessage({
   return (
     <div
       data-message-id={message?._id}
-      className={`flex w-full gap-3 ${
+      className={`flex w-full gap-0 sm:gap-3 ${
         isOwnMessage ? "flex-row-reverse" : "flex-row"
       }`}
     >
-      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-chime-gold">
+      <button
+        type="button"
+        onClick={handleOpenProfile}
+        disabled={!senderId || !onOpenProfile}
+        aria-label={`Open ${senderName}'s profile`}
+        className={`hidden h-10 w-10 shrink-0 overflow-hidden rounded-full bg-chime-gold sm:block ${
+          senderId && onOpenProfile
+            ? "cursor-pointer transition hover:opacity-85"
+            : "cursor-default"
+        } disabled:cursor-default`}
+      >
         {message?.sender?.profilePicture ? (
           <img
             src={message.sender.profilePicture}
@@ -54,35 +75,37 @@ function ClusterInvitationMessage({
             {senderName.charAt(0).toUpperCase()}
           </div>
         )}
-      </div>
+      </button>
 
-      <div className="min-w-0 max-w-[70%]">
-        <div
-          className={`mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 ${
-            isOwnMessage ? "justify-end" : "justify-start"
-          }`}
-        >
-          <span className="font-bold text-chime-text">
-            {isOwnMessage ? "You" : senderName}
-          </span>
-
-          <span className="text-xs text-chime-secondary">{formattedTime}</span>
+      <div
+        className={`min-w-0 max-w-[70%] ${
+          isOwnMessage ? "text-right" : "text-left"
+        }`}
+      >
+        <div className="mb-1 text-[11px] font-bold text-chime-secondary">
+          {isOwnMessage ? "You" : senderName}
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-stone-200 bg-chime-background text-left shadow-sm">
-          <div className="p-4">
-            <div className="mb-4 flex items-center gap-2">
+        <div
+          className={`overflow-hidden rounded-2xl border text-left shadow-sm ${
+            isOwnMessage
+              ? "rounded-tr-md border-chime-gold bg-chime-background"
+              : "rounded-tl-md border-stone-200 bg-chime-background"
+          }`}
+        >
+          <div className="p-3.5">
+            <div className="mb-3 flex items-center gap-2">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-chime-gold">
                 <Sparkles size={14} className="text-chime-text" />
               </div>
 
-              <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-chime-secondary">
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-chime-secondary">
                 Cluster Invitation
               </span>
             </div>
 
-            <div className="flex items-start gap-3">
-              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-chime-gold shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-chime-gold/80">
                 {cluster?.profilePicture ? (
                   <img
                     src={cluster.profilePicture}
@@ -91,29 +114,29 @@ function ClusterInvitationMessage({
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-chime-text">
-                    <Users size={22} strokeWidth={2} />
+                    <Users size={20} strokeWidth={2} />
                   </div>
                 )}
               </div>
 
-              <div className="min-w-0 pt-0.5">
-                <p className="truncate text-base font-extrabold text-chime-text">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-extrabold text-chime-text">
                   {clusterName}
                 </p>
 
-                <p className="mt-0.5 text-xs font-medium text-chime-secondary">
+                <p className="mt-0.5 text-[11px] font-semibold text-chime-secondary">
                   Private Cluster
                 </p>
-
-                {clusterDescription && (
-                  <p className="mt-2 text-xs leading-5 text-chime-secondary">
-                    {clusterDescription}
-                  </p>
-                )}
               </div>
             </div>
 
-            <div className="mt-4 rounded-xl border border-stone-200 bg-chime-chat px-3.5 py-3">
+            {clusterDescription && (
+              <p className="mt-3 line-clamp-3 text-xs leading-5 text-chime-secondary">
+                {clusterDescription}
+              </p>
+            )}
+
+            <div className="mt-3 border-t border-stone-200/70 pt-3">
               <p className="text-xs font-semibold leading-5 text-chime-text">
                 {isOwnMessage
                   ? "You've invited this user to join your Cluster."
@@ -130,7 +153,7 @@ function ClusterInvitationMessage({
                     disabled={responding}
                     className="flex items-center justify-center gap-1.5 rounded-xl bg-chime-gold px-3 py-2.5 text-xs font-extrabold text-chime-text transition hover:-translate-y-0.5 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                   >
-                    <Check size={15} strokeWidth={2.5} />
+                    <Check size={14} strokeWidth={2.5} />
                     Accept
                   </button>
 
@@ -140,38 +163,47 @@ function ClusterInvitationMessage({
                     disabled={responding}
                     className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-chime-background px-3 py-2.5 text-xs font-extrabold text-chime-text transition hover:-translate-y-0.5 hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                   >
-                    <X size={15} strokeWidth={2.5} />
+                    <X size={14} strokeWidth={2.5} />
                     Reject
                   </button>
                 </div>
               ) : (
-                <div className="mt-3 flex items-center gap-2 rounded-xl bg-chime-chat px-3.5 py-2.5">
+                <div className="mt-3 flex items-center gap-2 rounded-xl bg-chime-chat px-3 py-2.5">
                   <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-chime-secondary" />
 
-                  <p className="text-xs font-semibold text-chime-secondary">
+                  <p className="text-[11px] font-semibold text-chime-secondary">
                     Waiting for their response...
                   </p>
                 </div>
               )
             ) : (
-              <div className="mt-3 flex items-center gap-2 rounded-xl bg-chime-chat px-3.5 py-2.5">
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-chime-chat px-3 py-2.5">
                 {status === "accepted" ? (
                   <Check
-                    size={15}
+                    size={14}
                     strokeWidth={2.5}
                     className="shrink-0 text-chime-text"
                   />
                 ) : (
                   <X
-                    size={15}
+                    size={14}
                     strokeWidth={2.5}
                     className="shrink-0 text-chime-secondary"
                   />
                 )}
 
-                <p className="text-xs font-bold text-chime-text">
+                <p className="text-[11px] font-bold text-chime-text">
                   {statusContent[status] || "Invitation updated"}
                 </p>
+              </div>
+            )}
+
+            {formattedTime && (
+              <div className="mt-2 text-[10px] leading-none text-chime-secondary">
+                {formattedTime}
+                {isOwnMessage && (
+                  <span className="ml-1 text-[11px] font-semibold">✓✓</span>
+                )}
               </div>
             )}
           </div>

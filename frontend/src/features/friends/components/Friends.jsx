@@ -341,8 +341,8 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
         <button
           type="button"
           onClick={onBack}
-          className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text md:hidden"
-          aria-label="Back to sidebar"
+          className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+          aria-label="Back"
         >
           <ArrowLeft size={20} />
         </button>

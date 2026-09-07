@@ -2,14 +2,15 @@ import express from "express";
 
 import {
   sendMessage,
-  getDirectMessages,
-  getDirectConversations,
   getClusterMessages,
-  unsendMessage,
-  editMessage,
-  clearDirectMessages,
+  getDirectMessages,
   markDirectConversationRead,
+  getDirectConversations,
+  editMessage,
+  unsendMessage,
+  clearDirectMessages,
   wipeClusterMessages,
+  searchMessages,
 } from "../controllers/messageController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -17,6 +18,8 @@ import authMiddleware from "../middleware/authMiddleware.js";
 const router = express.Router();
 
 router.get("/dms", authMiddleware, getDirectConversations);
+
+router.get("/search", authMiddleware, searchMessages);
 
 router.get("/dm/:userId", authMiddleware, getDirectMessages);
 

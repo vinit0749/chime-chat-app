@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, MessageCircle, MoreVertical, Bell } from "lucide-react";
+import {
+  ArrowLeft,
+  MessageCircle,
+  MoreVertical,
+  Bell,
+  Search,
+} from "lucide-react";
 import Message from "../Message";
 import ClusterInvitationMessage from "../ClusterInvitationMessage";
+import MessageSearch from "../MessageSearch";
 import MessageInput from "../MessageInput";
 import ClusterMembersPanel from "../../../clusters/components/ClusterMembersPanel";
 import ClusterSettingsPanel from "../../../clusters/components/ClusterSettingsPanel";
@@ -19,6 +26,7 @@ import { authFetch } from "../../../../shared/utils/authFetch";
 function ChatArea({
   selectedChat,
   onOpenProfile,
+  onUserDeleted,
   onMobileBack,
   onOpenOwnProfile,
   onSelectChat,
@@ -52,6 +60,7 @@ function ChatArea({
   const [isWipeChatConfirmOpen, setIsWipeChatConfirmOpen] = useState(false);
   const [isWipeChatLoading, setIsWipeChatLoading] = useState(false);
   const [respondingInvitationId, setRespondingInvitationId] = useState(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const dmMenuRef = useRef(null);
   const clusterMenuRef = useRef(null);
@@ -65,6 +74,15 @@ function ChatArea({
     selectedChatRef,
     shouldAutoScrollRef,
     handleJumpToMessage,
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    isSearching,
+    searchResultIndex,
+    handleSearch,
+    handleSearchNext,
+    handleSearchPrevious,
+    handleClearSearch,
   } = useChatMessages({
     selectedChat,
     user,
@@ -108,6 +126,8 @@ function ChatArea({
     setIsWipeChatConfirmOpen(false);
     setIsWipeChatLoading(false);
     setRespondingInvitationId(null);
+    setIsSearchOpen(false);
+    handleClearSearch();
     shouldAutoScrollRef.current = false;
   }, [selectedChat, shouldAutoScrollRef]);
 
@@ -213,6 +233,7 @@ function ChatArea({
     shouldAutoScrollRef,
     onClusterUpdated,
     onClusterDeleted,
+    onUserDeleted,
   });
 
   useEffect(() => {
@@ -951,167 +972,286 @@ function ChatArea({
     }
   };
 
+  const handleCloseSearch = () => {
+    handleClearSearch();
+    setIsSearchOpen(false);
+  };
+
   return (
     <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
-      <header className="relative z-20 flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-4 md:px-6">
-        <button
-          type="button"
-          onClick={onMobileBack}
-          className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-stone-100 hover:text-chime-text md:hidden"
-          aria-label="Back to sidebar"
-        >
-          <ArrowLeft size={21} strokeWidth={2} />
-        </button>
-        {isDM && (
-          <button
-            type="button"
-            onClick={handleOpenChatProfile}
-            className="mr-3 h-10 w-10 shrink-0 overflow-hidden rounded-full bg-chime-gold transition hover:opacity-80"
-            aria-label={`Open ${chatDisplayName}'s profile`}
-          >
-            {chatProfilePicture ? (
-              <img
-                src={chatProfilePicture}
-                alt=""
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="h-full w-full bg-chime-gold" />
-            )}
-          </button>
-        )}
+      <header className="relative z-20 shrink-0 border-b border-stone-200 bg-chime-background">
+        <div className="flex h-16 items-center px-4 md:px-6">
+          <div className="flex min-w-0 flex-1 items-center">
+            <button
+              type="button"
+              onClick={onMobileBack}
+              className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-stone-100 hover:text-chime-text md:hidden"
+              aria-label="Back to sidebar"
+            >
+              <ArrowLeft size={21} strokeWidth={2} />
+            </button>
 
-        {isCluster && (
-          <button
-            type="button"
-            onClick={handleOpenClusterHeader}
-            className="flex min-w-0 items-center text-left"
-            aria-label={
-              isClusterOwner ? "Open Cluster Settings" : "Open Cluster Info"
-            }
-          >
-            <div className="mr-3 h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-chime-gold">
-              {selectedChat.cluster?.profilePicture ? (
-                <img
-                  src={selectedChat.cluster.profilePicture}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
+            {isDM && (
+              <button
+                type="button"
+                onClick={handleOpenChatProfile}
+                className="mr-3 h-10 w-10 shrink-0 overflow-hidden rounded-full bg-chime-gold transition hover:opacity-80"
+                aria-label={`Open ${chatDisplayName}'s profile`}
+              >
+                {chatProfilePicture ? (
+                  <img
+                    src={chatProfilePicture}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-full w-full bg-chime-gold" />
+                )}
+              </button>
+            )}
+
+            {isCluster && (
+              <button
+                type="button"
+                onClick={handleOpenClusterHeader}
+                className="flex min-w-0 items-center text-left"
+                aria-label={
+                  isClusterOwner ? "Open Cluster Settings" : "Open Cluster Info"
+                }
+              >
+                <div className="mr-3 h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-chime-gold">
+                  {selectedChat.cluster?.profilePicture ? (
+                    <img
+                      src={selectedChat.cluster.profilePicture}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-lg font-bold text-chime-text">
+                      {chatDisplayName?.trim()?.charAt(0)?.toUpperCase() || "C"}
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <h2 className="truncate font-bold text-chime-text transition hover:text-chime-secondary">
+                    {chatDisplayName}
+                  </h2>
+
+                  <p className="text-xs text-chime-secondary">
+                    {clusterVisibilityLabel}
+                  </p>
+                </div>
+              </button>
+            )}
+
+            {isDM && (
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={handleOpenChatProfile}
+                  className="min-w-0 text-left"
+                >
+                  <h2 className="truncate font-bold text-chime-text">
+                    {chatDisplayName}
+                  </h2>
+
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${presenceDot}`}
+                    />
+
+                    <span className="text-xs text-chime-secondary">
+                      {presenceLabel}
+                    </span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {isDM && (
+            <div className="ml-auto flex min-w-0 items-center gap-1">
+              {isSearchOpen ? (
+                <div className="hidden min-w-0 flex-1 md:block md:w-[32rem] md:flex-none">
+                  <MessageSearch
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    onSearch={handleSearch}
+                    onClose={handleCloseSearch}
+                    searchResults={searchResults}
+                    searchResultIndex={searchResultIndex}
+                    onNext={handleSearchNext}
+                    onPrevious={handleSearchPrevious}
+                    isSearching={isSearching}
+                  />
+                </div>
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-lg font-bold text-chime-text">
-                  {chatDisplayName?.trim()?.charAt(0)?.toUpperCase() || "C"}
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-stone-100 hover:text-chime-text"
+                  aria-label="Search messages"
+                >
+                  <Search size={20} strokeWidth={2} />
+                </button>
+              )}
+
+              {!isSearchOpen && (
+                <div ref={dmMenuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsDmMenuOpen((current) => !current)}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition ${
+                      isDmMenuOpen
+                        ? "bg-stone-100 text-chime-text"
+                        : "hover:bg-stone-100 hover:text-chime-text"
+                    }`}
+                    aria-label="Conversation actions"
+                    aria-expanded={isDmMenuOpen}
+                  >
+                    <MoreVertical size={20} strokeWidth={2} />
+                  </button>
+
+                  {isDmMenuOpen && (
+                    <DmContextMenu
+                      user={selectedChat.user}
+                      onViewProfile={handleOpenChatProfile}
+                      onUnfriend={handleUnfriend}
+                      onBlock={handleBlock}
+                      onUnblock={handleUnblock}
+                      onClearChat={handleClearChat}
+                      showUnfriend={dmRelationship === "friend"}
+                      showBlock={
+                        dmRelationship !== "blocked_by" &&
+                        dmRelationship !== "blocked"
+                      }
+                      showUnblock={dmRelationship === "blocked"}
+                      placement="chat"
+                      loading={isRelationshipLoading || isClearChatLoading}
+                    />
+                  )}
+                </div>
+              )}
+
+              {isSearchOpen && (
+                <div ref={dmMenuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsDmMenuOpen((current) => !current)}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition ${
+                      isDmMenuOpen
+                        ? "bg-stone-100 text-chime-text"
+                        : "hover:bg-stone-100 hover:text-chime-text"
+                    }`}
+                    aria-label="Conversation actions"
+                    aria-expanded={isDmMenuOpen}
+                  >
+                    <MoreVertical size={20} strokeWidth={2} />
+                  </button>
+
+                  {isDmMenuOpen && (
+                    <DmContextMenu
+                      user={selectedChat.user}
+                      onViewProfile={handleOpenChatProfile}
+                      onUnfriend={handleUnfriend}
+                      onBlock={handleBlock}
+                      onUnblock={handleUnblock}
+                      onClearChat={handleClearChat}
+                      showUnfriend={dmRelationship === "friend"}
+                      showBlock={
+                        dmRelationship !== "blocked_by" &&
+                        dmRelationship !== "blocked"
+                      }
+                      showUnblock={dmRelationship === "blocked"}
+                      placement="chat"
+                      loading={isRelationshipLoading || isClearChatLoading}
+                    />
+                  )}
                 </div>
               )}
             </div>
+          )}
 
-            <div className="min-w-0">
-              <h2 className="truncate font-bold text-chime-text transition hover:text-chime-secondary">
-                {chatDisplayName}
-              </h2>
+          {isCluster && (
+            <div className="ml-auto flex min-w-0 items-center gap-1">
+              {isSearchOpen ? (
+                <div className="hidden min-w-0 flex-1 md:block md:w-[32rem] md:flex-none">
+                  <MessageSearch
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    onSearch={handleSearch}
+                    onClose={handleCloseSearch}
+                    searchResults={searchResults}
+                    searchResultIndex={searchResultIndex}
+                    onNext={handleSearchNext}
+                    onPrevious={handleSearchPrevious}
+                    isSearching={isSearching}
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-stone-100 hover:text-chime-text"
+                  aria-label="Search messages"
+                >
+                  <Search size={20} strokeWidth={2} />
+                </button>
+              )}
 
-              <p className="text-xs text-chime-secondary">
-                {clusterVisibilityLabel}
-              </p>
-            </div>
-          </button>
-        )}
+              <div ref={clusterMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsClusterMenuOpen((current) => !current)}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition ${
+                    isClusterMenuOpen
+                      ? "bg-stone-100 text-chime-text"
+                      : "hover:bg-stone-100 hover:text-chime-text"
+                  }`}
+                  aria-label="Cluster actions"
+                  aria-expanded={isClusterMenuOpen}
+                >
+                  <MoreVertical size={20} strokeWidth={2} />
+                </button>
 
-        {isDM && (
-          <div className="min-w-0">
-            <button
-              type="button"
-              onClick={handleOpenChatProfile}
-              className="min-w-0 text-left"
-            >
-              <h2 className="truncate font-bold text-chime-text">
-                {chatDisplayName}
-              </h2>
-
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${presenceDot}`}
-                />
-
-                <span className="text-xs text-chime-secondary">
-                  {presenceLabel}
-                </span>
+                {isClusterMenuOpen && (
+                  <ClusterContextMenu
+                    isOwner={isClusterOwner}
+                    memberCount={selectedChat.cluster?.memberCount || 0}
+                    isPrivate={
+                      String(clusterVisibility).toLowerCase() === "private"
+                    }
+                    inviteCode={selectedChat.cluster?.inviteCode || ""}
+                    placement="chat"
+                    onMembers={handleOpenClusterMembers}
+                    onSettings={handleOpenClusterSettings}
+                    onTransferOwnership={handleTransferOwnership}
+                    onWipeChat={handleWipeChat}
+                    onDeleteCluster={handleDeleteCluster}
+                    onInfo={handleOpenClusterInfo}
+                    onLeaveCluster={handleLeaveCluster}
+                    loading={isWipeChatLoading || isDeleteClusterLoading}
+                  />
+                )}
               </div>
-            </button>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
-        {isDM && (
-          <div ref={dmMenuRef} className="relative ml-auto">
-            <button
-              type="button"
-              onClick={() => setIsDmMenuOpen((current) => !current)}
-              className={`flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition ${
-                isDmMenuOpen
-                  ? "bg-stone-100 text-chime-text"
-                  : "hover:bg-stone-100 hover:text-chime-text"
-              }`}
-              aria-label="Conversation actions"
-              aria-expanded={isDmMenuOpen}
-            >
-              <MoreVertical size={20} strokeWidth={2} />
-            </button>
-
-            {isDmMenuOpen && (
-              <DmContextMenu
-                user={selectedChat.user}
-                onViewProfile={handleOpenChatProfile}
-                onUnfriend={handleUnfriend}
-                onBlock={handleBlock}
-                onUnblock={handleUnblock}
-                onClearChat={handleClearChat}
-                showUnfriend={dmRelationship === "friend"}
-                showBlock={
-                  dmRelationship !== "blocked_by" &&
-                  dmRelationship !== "blocked"
-                }
-                showUnblock={dmRelationship === "blocked"}
-                placement="chat"
-                loading={isRelationshipLoading || isClearChatLoading}
-              />
-            )}
-          </div>
-        )}
-
-        {isCluster && (
-          <div ref={clusterMenuRef} className="relative ml-auto">
-            <button
-              type="button"
-              onClick={() => setIsClusterMenuOpen((current) => !current)}
-              className={`flex h-9 w-9 items-center justify-center rounded-xl text-chime-secondary transition ${
-                isClusterMenuOpen
-                  ? "bg-stone-100 text-chime-text"
-                  : "hover:bg-stone-100 hover:text-chime-text"
-              }`}
-              aria-label="Cluster actions"
-              aria-expanded={isClusterMenuOpen}
-            >
-              <MoreVertical size={20} strokeWidth={2} />
-            </button>
-
-            {isClusterMenuOpen && (
-              <ClusterContextMenu
-                isOwner={isClusterOwner}
-                memberCount={selectedChat.cluster?.memberCount || 0}
-                isPrivate={
-                  String(clusterVisibility).toLowerCase() === "private"
-                }
-                inviteCode={selectedChat.cluster?.inviteCode || ""}
-                placement="chat"
-                onMembers={handleOpenClusterMembers}
-                onSettings={handleOpenClusterSettings}
-                onTransferOwnership={handleTransferOwnership}
-                onWipeChat={handleWipeChat}
-                onDeleteCluster={handleDeleteCluster}
-                onInfo={handleOpenClusterInfo}
-                onLeaveCluster={handleLeaveCluster}
-                loading={isWipeChatLoading || isDeleteClusterLoading}
-              />
-            )}
+        {isSearchOpen && (
+          <div className="border-t border-stone-200 px-3 py-2 md:hidden">
+            <MessageSearch
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onSearch={handleSearch}
+              onClose={handleCloseSearch}
+              searchResults={searchResults}
+              searchResultIndex={searchResultIndex}
+              onNext={handleSearchNext}
+              onPrevious={handleSearchPrevious}
+              isSearching={isSearching}
+            />
           </div>
         )}
       </header>
@@ -1242,10 +1382,21 @@ function ChatArea({
                       responding={
                         String(respondingInvitationId) === String(message._id)
                       }
+                      onOpenProfile={messageProfileHandler}
                     />
                   </div>
                 );
               }
+
+              const isSearchResult = searchResults.some(
+                (result) => String(result._id) === String(message._id),
+              );
+
+              const isCurrentSearchResult =
+                searchResultIndex >= 0 &&
+                searchResults[searchResultIndex]?._id &&
+                String(searchResults[searchResultIndex]._id) ===
+                  String(message._id);
 
               return (
                 <Message
@@ -1276,6 +1427,7 @@ function ChatArea({
                   replyTo={message.replyTo}
                   onJumpToMessage={handleJumpToMessage}
                   isEdited={message.isEdited}
+                  isHighlighted={isSearchResult && isCurrentSearchResult}
                 />
               );
             })}

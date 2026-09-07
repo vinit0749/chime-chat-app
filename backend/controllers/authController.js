@@ -98,3 +98,33 @@ export const loginUser = async (req, res) => {
     });
   }
 };
+
+export const loginWithGoogle = async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user) {
+      return res.redirect("http://localhost:5173/login?error=google");
+    }
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    const userData = encodeURIComponent(
+      JSON.stringify({
+        id: user._id,
+        username: user.username,
+        email: user.email,
+      }),
+    );
+
+    res.redirect(
+      `http://localhost:5173/oauth-success?token=${token}&user=${userData}`,
+    );
+  } catch (error) {
+    console.error("Google login error:", error.message);
+
+    res.redirect("http://localhost:5173/login?error=google");
+  }
+};

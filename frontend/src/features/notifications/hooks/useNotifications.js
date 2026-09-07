@@ -76,6 +76,53 @@ function useNotifications() {
     }
   }, []);
 
+  const deleteNotification = useCallback(async (notificationId) => {
+    if (!notificationId) {
+      return;
+    }
+
+    try {
+      const response = await authFetch(
+        `http://localhost:5000/api/notifications/${notificationId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to delete notification");
+      }
+
+      setNotifications((currentNotifications) =>
+        currentNotifications.filter(
+          (notification) => String(notification._id) !== String(notificationId),
+        ),
+      );
+    } catch (error) {
+      console.error("Delete notification error:", error);
+    }
+  }, []);
+
+  const deleteAllNotifications = useCallback(async () => {
+    try {
+      const response = await authFetch(
+        "http://localhost:5000/api/notifications/all",
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to delete all notifications");
+      }
+
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (error) {
+      console.error("Delete all notifications error:", error);
+    }
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem("token");
 
@@ -177,16 +224,23 @@ function useNotifications() {
       setUnreadCount(0);
     };
 
+    const handleNotificationsDeletedAll = () => {
+      setNotifications([]);
+      setUnreadCount(0);
+    };
+
     newSocket.on("notification_received", handleNotificationReceived);
     newSocket.on("notification_updated", handleNotificationUpdated);
     newSocket.on("notification_deleted", handleNotificationDeleted);
     newSocket.on("notifications_read_all", handleNotificationsReadAll);
+    newSocket.on("notifications_deleted_all", handleNotificationsDeletedAll);
 
     return () => {
       newSocket.off("notification_received", handleNotificationReceived);
       newSocket.off("notification_updated", handleNotificationUpdated);
       newSocket.off("notification_deleted", handleNotificationDeleted);
       newSocket.off("notifications_read_all", handleNotificationsReadAll);
+      newSocket.off("notifications_deleted_all", handleNotificationsDeletedAll);
 
       newSocket.disconnect();
       setSocket(null);
@@ -216,6 +270,8 @@ function useNotifications() {
     fetchNotifications,
     fetchUnreadCount,
     markAllNotificationsRead,
+    deleteNotification,
+    deleteAllNotifications,
   };
 }
 

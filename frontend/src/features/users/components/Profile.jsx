@@ -10,6 +10,8 @@ import {
   X,
   Check,
   ChevronDown,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { authFetch } from "../../../shared/utils/authFetch";
 import { usePresence } from "../../../shared/context/PresenceContext";
@@ -38,6 +40,9 @@ function Profile({ userId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [removingPicture, setRemovingPicture] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
 
   const [error, setError] = useState("");
@@ -127,6 +132,7 @@ function Profile({ userId, onBack }) {
     const handleEscape = (event) => {
       if (event.key === "Escape") {
         setStatusOpen(false);
+        setShowDeleteModal(false);
       }
     };
 
@@ -317,6 +323,49 @@ function Profile({ userId, onBack }) {
     }
   };
 
+  const handleRemovePicture = async () => {
+    if (removingPicture || !profile.profilePicture) {
+      return;
+    }
+
+    try {
+      setRemovingPicture(true);
+      setError("");
+      setSuccess("");
+
+      const response = await authFetch(
+        "http://localhost:5000/api/users/me/profile-picture",
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || "Failed to remove profile picture.");
+        return;
+      }
+
+      setProfile((currentProfile) => ({
+        ...currentProfile,
+        profilePicture: "",
+      }));
+
+      setOriginalProfile((currentProfile) => ({
+        ...currentProfile,
+        profilePicture: "",
+      }));
+
+      setSuccess("Profile picture removed successfully.");
+    } catch (error) {
+      console.error("Failed to remove profile picture:", error);
+      setError("Failed to remove profile picture.");
+    } finally {
+      setRemovingPicture(false);
+    }
+  };
+
   const handleSave = async (event) => {
     event?.preventDefault();
 
@@ -375,6 +424,40 @@ function Profile({ userId, onBack }) {
     setStatusOpen(false);
     setError("");
     setSuccess("");
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deletingAccount) {
+      return;
+    }
+
+    try {
+      setDeletingAccount(true);
+      setError("");
+
+      const response = await authFetch("http://localhost:5000/api/users/me", {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || "Failed to delete account.");
+        setDeletingAccount(false);
+        setShowDeleteModal(false);
+        return;
+      }
+
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Failed to delete account:", error);
+      setError("Failed to delete account.");
+      setDeletingAccount(false);
+      setShowDeleteModal(false);
+    }
   };
 
   const hasChanges =
@@ -558,7 +641,7 @@ function Profile({ userId, onBack }) {
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        disabled={uploadingPicture}
+                        disabled={uploadingPicture || removingPicture}
                         className="absolute bottom-0 right-0 flex h-9 w-9 items-center justify-center rounded-full border-2 border-chime-chat bg-chime-gold text-chime-text shadow-sm transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Change profile picture"
                       >
@@ -624,14 +707,27 @@ function Profile({ userId, onBack }) {
                       {renderStatusDropdown()}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingPicture}
-                      className="hidden h-10 rounded-xl border border-stone-200 bg-chime-background px-4 text-sm font-semibold text-chime-text transition hover:border-chime-gold hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50 sm:block"
-                    >
-                      Change photo
-                    </button>
+                    <div className="hidden items-center gap-2 sm:flex">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingPicture || removingPicture}
+                        className="h-10 rounded-xl border border-stone-200 bg-chime-background px-4 text-sm font-semibold text-chime-text transition hover:border-chime-gold hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Change photo
+                      </button>
+
+                      {profile.profilePicture && (
+                        <button
+                          type="button"
+                          onClick={handleRemovePicture}
+                          disabled={uploadingPicture || removingPicture}
+                          className="h-10 rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {removingPicture ? "Removing..." : "Remove photo"}
+                        </button>
+                      )}
+                    </div>
 
                     <button
                       type="button"
@@ -665,17 +761,28 @@ function Profile({ userId, onBack }) {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingPicture}
+                    disabled={uploadingPicture || removingPicture}
                     className="mt-3 flex h-10 w-full items-center justify-center rounded-xl border border-stone-200 bg-chime-background px-4 text-sm font-semibold text-chime-text transition hover:border-chime-gold hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Change photo
                   </button>
 
+                  {profile.profilePicture && (
+                    <button
+                      type="button"
+                      onClick={handleRemovePicture}
+                      disabled={uploadingPicture || removingPicture}
+                      className="mt-3 flex h-10 w-full items-center justify-center rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {removingPicture ? "Removing..." : "Remove photo"}
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={handleSave}
                     disabled={!hasChanges || saving}
-                    className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-chime-gold px-4 text-sm font-bold text-chime-text shadow-sm transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-chime-gold px-4 py-2.5 text-sm font-bold text-chime-text shadow-sm transition hover:bg-chime-bright disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Save size={16} />
                     {saving ? "Saving..." : "Save"}
@@ -873,6 +980,37 @@ function Profile({ userId, onBack }) {
                 </>
               )}
             </div>
+
+            {isOwnProfile && (
+              <div className="mt-6 rounded-2xl border border-red-200 bg-red-50/40 p-5 md:p-7">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                    <AlertTriangle size={18} />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg font-bold text-red-700">
+                      Danger Zone
+                    </h3>
+
+                    <p className="mt-1 text-sm leading-6 text-red-600/80">
+                      Permanently delete your Chime account and all associated
+                      account data. This action cannot be undone.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteModal(true)}
+                      disabled={deletingAccount}
+                      className="mt-5 flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-sm font-bold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trash2 size={16} />
+                      Delete Account
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -953,6 +1091,58 @@ function Profile({ userId, onBack }) {
                   {uploadingPicture ? "Uploading..." : "Use Picture"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-chime-background p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                <Trash2 size={19} />
+              </div>
+
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-chime-text">
+                  Delete your account?
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-chime-secondary">
+                  This will permanently delete your account, friendships, direct
+                  messages, notifications, Cluster memberships, and owned
+                  Clusters. Your messages in Clusters will remain visible as
+                  messages from a deleted user.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+              <p className="text-sm font-semibold text-red-700">
+                This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deletingAccount}
+                className="rounded-xl px-4 py-2.5 text-sm font-semibold text-chime-text transition hover:bg-chime-selected disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deletingAccount}
+                className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 size={16} />
+                {deletingAccount ? "Deleting..." : "Delete Account"}
+              </button>
             </div>
           </div>
         </div>

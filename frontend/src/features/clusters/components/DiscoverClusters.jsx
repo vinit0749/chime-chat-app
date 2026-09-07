@@ -133,8 +133,8 @@ function DiscoverClusters({ onSelectCluster, onBack }) {
               <button
                 type="button"
                 onClick={onBack}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text md:hidden"
-                aria-label="Back to sidebar"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+                aria-label="Back"
               >
                 <ArrowLeft size={20} />
               </button>

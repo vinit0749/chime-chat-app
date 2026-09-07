@@ -7,6 +7,7 @@ import {
   markAllNotificationsRead,
   updateNotificationAction,
   deleteNotification,
+  deleteAllNotifications,
 } from "../controllers/notificationController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -26,6 +27,8 @@ router.patch(
   authMiddleware,
   updateNotificationAction,
 );
+
+router.delete("/all", authMiddleware, deleteAllNotifications);
 
 router.delete("/:notificationId", authMiddleware, deleteNotification);
 

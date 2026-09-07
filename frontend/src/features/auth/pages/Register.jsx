@@ -10,6 +10,10 @@ function Register() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const handleGoogleLogin = () => {
+    window.location.href = "http://localhost:5000/api/auth/google";
+  };
+
   const handleRegister = async (event) => {
     event.preventDefault();
 
@@ -52,7 +56,6 @@ function Register() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-chime-chat px-4 py-8 sm:px-6">
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-chime-background p-6 shadow-sm sm:p-8">
-        {/* Brand */}
         <div className="mb-8 text-center">
           <Link
             to="/"
@@ -70,7 +73,6 @@ function Register() {
           </p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleRegister} className="space-y-5">
           <div>
             <label
@@ -138,14 +140,27 @@ function Register() {
           </button>
         </form>
 
-        {/* Error */}
+        <div className="my-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-stone-200" />
+          <span className="text-xs font-medium text-chime-secondary">OR</span>
+          <div className="h-px flex-1 bg-stone-200" />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-stone-200 bg-white px-5 py-3.5 font-bold text-chime-text transition hover:bg-stone-50"
+        >
+          <span className="text-lg font-bold">G</span>
+          Continue with Google
+        </button>
+
         {message && (
           <p className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-center text-sm text-red-600">
             {message}
           </p>
         )}
 
-        {/* Login */}
         <p className="mt-7 text-center text-sm text-chime-secondary">
           Already have an account?{" "}
           <Link

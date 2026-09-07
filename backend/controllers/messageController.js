@@ -853,3 +853,157 @@ export const wipeClusterMessages = async (req, res) => {
     });
   }
 };
+
+export const searchMessages = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { query, userId: otherUserId, clusterId } = req.query;
+
+    const searchQuery = query?.trim();
+
+    if (!searchQuery) {
+      return res.status(400).json({
+        message: "Search query is required",
+      });
+    }
+
+    if (searchQuery.length > 100) {
+      return res.status(400).json({
+        message: "Search query cannot exceed 100 characters",
+      });
+    }
+
+    if (otherUserId && clusterId) {
+      return res.status(400).json({
+        message: "Search must target either a conversation or a Cluster",
+      });
+    }
+
+    if (!otherUserId && !clusterId) {
+      return res.status(400).json({
+        message: "Conversation or Cluster is required",
+      });
+    }
+
+    const messageQuery = {
+      messageType: "text",
+      content: {
+        $regex: searchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        $options: "i",
+      },
+    };
+
+    if (clusterId) {
+      if (!mongoose.Types.ObjectId.isValid(clusterId)) {
+        return res.status(400).json({
+          message: "Invalid cluster ID",
+        });
+      }
+
+      const cluster = await Cluster.findById(clusterId);
+
+      if (!cluster || cluster.isDeleted) {
+        return res.status(404).json({
+          message: "Cluster not found",
+        });
+      }
+
+      const membership = await ClusterMember.findOne({
+        cluster: clusterId,
+        user: userId,
+        status: "active",
+      });
+
+      if (!membership) {
+        return res.status(403).json({
+          message: "You must be an active Cluster member to search messages",
+        });
+      }
+
+      messageQuery.cluster = clusterId;
+    } else {
+      if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
+        return res.status(400).json({
+          message: "Invalid user ID",
+        });
+      }
+
+      if (String(userId) === String(otherUserId)) {
+        return res.status(400).json({
+          message: "Invalid conversation",
+        });
+      }
+
+      const otherUser = await User.findById(otherUserId);
+
+      if (!otherUser || otherUser.isDeleted) {
+        return res.status(404).json({
+          message: "User not found",
+        });
+      }
+
+      const friendship = await Friendship.findOne({
+        status: "accepted",
+        $or: [
+          {
+            requester: userId,
+            recipient: otherUserId,
+          },
+          {
+            requester: otherUserId,
+            recipient: userId,
+          },
+        ],
+      });
+
+      if (!friendship) {
+        return res.status(403).json({
+          message: "You can only search messages with your friends",
+        });
+      }
+
+      messageQuery.cluster = null;
+      messageQuery.$or = [
+        {
+          sender: userId,
+          recipient: otherUserId,
+        },
+        {
+          sender: otherUserId,
+          recipient: userId,
+        },
+      ];
+
+      const conversation = await Conversation.findOne({
+        participants: {
+          $all: [userId, otherUserId],
+        },
+      });
+
+      const clearedAt = conversation?.clearedAt?.get(String(userId));
+
+      if (clearedAt) {
+        messageQuery.createdAt = {
+          $gt: clearedAt,
+        };
+      }
+    }
+
+    const messages = await Message.find(messageQuery)
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate("sender", "username displayName profilePicture")
+      .populate("recipient", "username displayName profilePicture")
+      .populate("cluster", "name description profilePicture visibility owner");
+
+    return res.status(200).json({
+      messages,
+    });
+  } catch (error) {
+    console.error("Search messages error:", error);
+
+    return res.status(500).json({
+      message: "Failed to search messages",
+    });
+  }
+};

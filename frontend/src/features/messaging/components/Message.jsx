@@ -313,11 +313,9 @@ function Message({
       <div
         ref={messageRef}
         data-message-id={messageId}
-        className={`flex w-full gap-3 rounded-xl px-0 transition-colors duration-300 ${
+        className={`flex w-full gap-0 rounded-xl px-0 transition-colors duration-300 sm:gap-3 ${
           isOwnMessage ? "flex-row-reverse" : "flex-row"
-        } ${isGrouped ? "mb-2" : "mb-4"} ${
-          isHighlighted ? "bg-chime-gold/20 px-2 py-1" : ""
-        }`}
+        } mb-1 ${isHighlighted ? "bg-chime-gold/20 px-2 py-1" : ""}`}
       >
         <button
           type="button"
@@ -327,7 +325,7 @@ function Message({
             }
           }}
           disabled={!userId || !onOpenProfile}
-          className={`h-10 w-10 shrink-0 overflow-hidden rounded-full ${avatarColor} ${
+          className={`hidden h-10 w-10 shrink-0 overflow-hidden rounded-full sm:block ${avatarColor} ${
             isGrouped ? "invisible" : ""
           } ${
             userId && onOpenProfile
@@ -353,29 +351,8 @@ function Message({
           }`}
         >
           {!isGrouped && (
-            <div
-              className={`mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 ${
-                isOwnMessage ? "justify-end" : "justify-start"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  if (userId && onOpenProfile) {
-                    onOpenProfile(userId);
-                  }
-                }}
-                disabled={!userId || !onOpenProfile}
-                className={`font-bold text-chime-text ${
-                  userId && onOpenProfile
-                    ? "cursor-pointer hover:underline"
-                    : "cursor-default"
-                }`}
-              >
-                {profileName}
-              </button>
-
-              <span className="text-xs text-chime-secondary">{time}</span>
+            <div className="mb-1 text-[11px] font-bold text-chime-secondary">
+              {isOwnMessage ? "You" : profileName}
             </div>
           )}
 
@@ -387,7 +364,7 @@ function Message({
             onPointerMove={cancelLongPress}
             onPointerCancel={cancelLongPress}
             onPointerLeave={cancelLongPress}
-            className={`inline-block select-text rounded-2xl border px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
+            className={`inline-block max-w-full select-text rounded-2xl border px-3.5 py-2 text-sm leading-relaxed ${
               isOwnMessage
                 ? "rounded-tr-md border-chime-gold bg-chime-gold text-chime-text"
                 : "rounded-tl-md border-stone-200 bg-chime-background text-chime-text"
@@ -397,7 +374,7 @@ function Message({
               <button
                 type="button"
                 onClick={handleJumpToReply}
-                className="mb-2 block w-full overflow-hidden rounded-lg border-l-[3px] border-chime-gold bg-white px-3 py-2 text-left transition hover:bg-stone-50"
+                className="mb-1.5 block w-full overflow-hidden rounded-md border-l-[3px] border-chime-gold bg-white/70 px-2.5 py-1.5 text-left transition hover:bg-white"
                 aria-label={`Jump to message from ${repliedProfileName}`}
               >
                 <p className="truncate text-[11px] font-bold text-chime-text">
@@ -410,24 +387,34 @@ function Message({
               </button>
             )}
 
-            <span className="break-words">{content}</span>
+            <div className="break-words">{content}</div>
 
             {isEdited && (
-              <span className="ml-2 text-[10px] font-medium text-chime-secondary">
+              <span className="mt-0.5 block text-[10px] font-medium text-chime-secondary">
                 Edited
               </span>
             )}
 
-            {isOwnMessage && (
-              <span className="ml-2 text-[11px] font-semibold leading-none text-chime-secondary">
-                {deliveryIndicator}
-              </span>
+            {!isGrouped && (
+              <div
+                className={`mt-0.5 text-[10px] leading-none ${
+                  isOwnMessage ? "text-chime-text/60" : "text-chime-secondary"
+                }`}
+              >
+                {time}
+
+                {isOwnMessage && (
+                  <span className="ml-1 text-[11px] font-semibold">
+                    {deliveryIndicator}
+                  </span>
+                )}
+              </div>
             )}
           </div>
 
           {isClusterMessage && isOwnMessage
             ? readByLabel && (
-                <div className="mt-2">
+                <div className="mt-1">
                   <button
                     type="button"
                     onClick={() => setIsReadByModalOpen(true)}
@@ -438,7 +425,7 @@ function Message({
                 </div>
               )
             : showReadStatus && (
-                <div className="mt-2 text-[11px] font-bold text-chime-secondary">
+                <div className="mt-1 text-[11px] font-bold text-chime-secondary">
                   Read
                 </div>
               )}

@@ -1,4 +1,4 @@
-import { Compass, LogOut, Users } from "lucide-react";
+import { Compass, LogOut, User, Users } from "lucide-react";
 
 function SidebarFooter({
   mobile,
@@ -84,7 +84,9 @@ function SidebarFooter({
                   className="h-10 w-10 rounded-full object-cover"
                 />
               ) : (
-                <div className="h-10 w-10 rounded-full bg-chime-gold" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-chime-gold text-chime-text">
+                  <User size={20} />
+                </div>
               )}
 
               {user?._id && renderPresenceIndicator(user._id)}

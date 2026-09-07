@@ -5,10 +5,16 @@ function useChatMessages({ selectedChat, user }) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResultIndex, setSearchResultIndex] = useState(-1);
+
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const shouldAutoScrollRef = useRef(false);
   const selectedChatRef = useRef(selectedChat);
+  const searchRequestRef = useRef(0);
 
   useEffect(() => {
     selectedChatRef.current = selectedChat;
@@ -17,8 +23,15 @@ function useChatMessages({ selectedChat, user }) {
   useEffect(() => {
     if (!selectedChat) {
       setMessages([]);
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearchResultIndex(-1);
       return;
     }
+
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchResultIndex(-1);
 
     let cancelled = false;
 
@@ -203,6 +216,116 @@ function useChatMessages({ selectedChat, user }) {
     });
   }, [messages]);
 
+  const handleSearch = async () => {
+    const query = searchQuery.trim();
+
+    if (!query || !selectedChat || isSearching) {
+      return;
+    }
+
+    searchRequestRef.current += 1;
+    const requestId = searchRequestRef.current;
+
+    setIsSearching(true);
+    setSearchResults([]);
+    setSearchResultIndex(-1);
+
+    try {
+      const params = new URLSearchParams({
+        query,
+      });
+
+      if (selectedChat.type === "dm") {
+        if (!selectedChat.user?._id) {
+          return;
+        }
+
+        params.set("userId", selectedChat.user._id);
+      } else if (selectedChat.type === "cluster") {
+        if (!selectedChat.cluster?._id) {
+          return;
+        }
+
+        params.set("clusterId", selectedChat.cluster._id);
+      } else {
+        return;
+      }
+
+      const response = await authFetch(
+        `http://localhost:5000/api/messages/search?${params.toString()}`,
+      );
+
+      const data = await response.json();
+
+      if (requestId !== searchRequestRef.current) {
+        return;
+      }
+
+      if (!response.ok) {
+        console.error(data.message || "Failed to search messages");
+        setSearchResults([]);
+        setSearchResultIndex(-1);
+        return;
+      }
+
+      const results = Array.isArray(data.messages)
+        ? [...data.messages].sort(
+            (a, b) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+          )
+        : [];
+
+      setSearchResults(results);
+      setSearchResultIndex(results.length > 0 ? 0 : -1);
+    } catch (error) {
+      if (requestId === searchRequestRef.current) {
+        console.error("Failed to search messages:", error);
+        setSearchResults([]);
+        setSearchResultIndex(-1);
+      }
+    } finally {
+      if (requestId === searchRequestRef.current) {
+        setIsSearching(false);
+      }
+    }
+  };
+
+  const handleSearchNext = () => {
+    if (searchResults.length === 0) {
+      return;
+    }
+
+    setSearchResultIndex((currentIndex) => {
+      if (currentIndex < 0) {
+        return 0;
+      }
+
+      return (currentIndex + 1) % searchResults.length;
+    });
+  };
+
+  const handleSearchPrevious = () => {
+    if (searchResults.length === 0) {
+      return;
+    }
+
+    setSearchResultIndex((currentIndex) => {
+      if (currentIndex < 0) {
+        return searchResults.length - 1;
+      }
+
+      return (currentIndex - 1 + searchResults.length) % searchResults.length;
+    });
+  };
+
+  const handleClearSearch = () => {
+    searchRequestRef.current += 1;
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchResultIndex(-1);
+    setIsSearching(false);
+  };
+
   const handleJumpToMessage = (messageId) => {
     if (!messageId) {
       return;
@@ -234,6 +357,20 @@ function useChatMessages({ selectedChat, user }) {
     }, 1200);
   };
 
+  useEffect(() => {
+    if (searchResultIndex < 0 || searchResultIndex >= searchResults.length) {
+      return;
+    }
+
+    const messageId = searchResults[searchResultIndex]?._id;
+
+    if (!messageId) {
+      return;
+    }
+
+    handleJumpToMessage(messageId);
+  }, [searchResultIndex, searchResults]);
+
   return {
     messages,
     setMessages,
@@ -243,6 +380,16 @@ function useChatMessages({ selectedChat, user }) {
     selectedChatRef,
     shouldAutoScrollRef,
     handleJumpToMessage,
+
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    isSearching,
+    searchResultIndex,
+    handleSearch,
+    handleSearchNext,
+    handleSearchPrevious,
+    handleClearSearch,
   };
 }
 

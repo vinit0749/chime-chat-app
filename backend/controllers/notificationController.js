@@ -291,3 +291,39 @@ export const deleteNotification = async (req, res) => {
     });
   }
 };
+
+export const deleteAllNotifications = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const notifications = await Notification.find({
+      recipient: userId,
+    }).select("_id");
+
+    if (notifications.length === 0) {
+      return res.status(200).json({
+        message: "All notifications deleted",
+      });
+    }
+
+    await Notification.deleteMany({
+      recipient: userId,
+    });
+
+    const emitToUser = req.app.get("emitToUser");
+
+    if (emitToUser) {
+      emitToUser(String(userId), "notifications_deleted_all");
+    }
+
+    return res.status(200).json({
+      message: "All notifications deleted",
+    });
+  } catch (error) {
+    console.error("Delete all notifications error:", error);
+
+    return res.status(500).json({
+      message: "Failed to delete all notifications",
+    });
+  }
+};

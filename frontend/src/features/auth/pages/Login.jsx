@@ -10,6 +10,10 @@ function Login() {
   const [message, setMessage] = useState(location.state?.message || "");
   const [isLoading, setIsLoading] = useState(false);
 
+  const handleGoogleLogin = () => {
+    window.location.href = "http://localhost:5000/api/auth/google";
+  };
+
   const handleLogin = async (event) => {
     event.preventDefault();
 
@@ -116,6 +120,21 @@ function Login() {
             {isLoading ? "Logging in..." : "Log in"}
           </button>
         </form>
+
+        <div className="my-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-stone-200" />
+          <span className="text-xs font-medium text-chime-secondary">OR</span>
+          <div className="h-px flex-1 bg-stone-200" />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-stone-200 bg-white px-5 py-3.5 font-bold text-chime-text transition hover:bg-stone-50"
+        >
+          <span className="text-lg font-bold">G</span>
+          Continue with Google
+        </button>
 
         {/* Message */}
         {message && (

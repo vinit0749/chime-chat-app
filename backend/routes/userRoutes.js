@@ -4,6 +4,9 @@ import authMiddleware from "../middleware/authMiddleware.js";
 import User from "../models/User.js";
 import Cluster from "../models/Cluster.js";
 import ClusterMember from "../models/ClusterMember.js";
+import Message from "../models/Message.js";
+import Conversation from "../models/Conversation.js";
+import Notification from "../models/Notification.js";
 import cloudinary from "../config/cloudinary.js";
 
 const router = express.Router();
@@ -98,6 +101,20 @@ router.put("/me", authMiddleware, async (req, res) => {
     }
 
     await user.save();
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.emit("user_profile_updated", {
+        user: {
+          _id: user._id,
+          username: user.username,
+          displayName: user.displayName,
+          profilePicture: user.profilePicture || "",
+          status: user.status,
+        },
+      });
+    }
 
     if (status !== undefined && previousStatus !== user.status) {
       const io = req.app.get("io");
@@ -203,6 +220,20 @@ router.put(
 
       await user.save();
 
+      const io = req.app.get("io");
+
+      if (io) {
+        io.emit("user_profile_updated", {
+          user: {
+            _id: user._id,
+            username: user.username,
+            displayName: user.displayName,
+            profilePicture: user.profilePicture || "",
+            status: user.status,
+          },
+        });
+      }
+
       res.json({
         message: "Profile picture updated successfully",
         user: {
@@ -223,6 +254,62 @@ router.put(
     }
   },
 );
+
+router.delete("/me/profile-picture", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+
+    if (!user || user.isDeleted) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    if (user.profilePicturePublicId) {
+      try {
+        await cloudinary.uploader.destroy(user.profilePicturePublicId);
+      } catch (error) {
+        console.error("Failed to delete profile picture:", error);
+      }
+    }
+
+    user.profilePicture = "";
+    user.profilePicturePublicId = "";
+
+    await user.save();
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.emit("user_profile_updated", {
+        user: {
+          _id: user._id,
+          username: user.username,
+          displayName: user.displayName,
+          profilePicture: "",
+          status: user.status,
+        },
+      });
+    }
+
+    return res.json({
+      message: "Profile picture removed successfully",
+      user: {
+        _id: user._id,
+        username: user.username,
+        displayName: user.displayName,
+        profilePicture: "",
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error("Remove profile picture error:", error);
+
+    return res.status(500).json({
+      message: "Failed to remove profile picture",
+    });
+  }
+});
 
 router.post("/pins/dm/:userId", authMiddleware, async (req, res) => {
   try {
@@ -288,43 +375,179 @@ router.post("/pins/dm/:userId", authMiddleware, async (req, res) => {
   }
 });
 
-router.delete("/pins/dm/:userId", authMiddleware, async (req, res) => {
+router.delete("/me", authMiddleware, async (req, res) => {
   try {
-    const currentUser = await User.findById(req.user.userId);
+    const user = await User.findById(req.user.userId);
 
-    if (!currentUser || currentUser.isDeleted) {
+    if (!user) {
       return res.status(404).json({
         message: "User not found",
       });
     }
 
-    currentUser.pinnedDMs = currentUser.pinnedDMs.filter(
-      (id) => String(id) !== String(req.params.userId),
+    const userId = user._id;
+
+    const ownedClusters = await Cluster.find({
+      owner: userId,
+    }).select("_id profilePicturePublicId");
+
+    const ownedClusterIds = ownedClusters.map((cluster) => cluster._id);
+
+    if (user.profilePicturePublicId) {
+      try {
+        await cloudinary.uploader.destroy(user.profilePicturePublicId);
+      } catch (error) {
+        console.error(
+          "Failed to delete user profile picture from Cloudinary:",
+          error,
+        );
+      }
+    }
+
+    for (const cluster of ownedClusters) {
+      if (cluster.profilePicturePublicId) {
+        try {
+          await cloudinary.uploader.destroy(cluster.profilePicturePublicId);
+        } catch (error) {
+          console.error(
+            `Failed to delete Cluster profile picture ${cluster._id}:`,
+            error,
+          );
+        }
+      }
+    }
+
+    if (ownedClusterIds.length > 0) {
+      const io = req.app.get("io");
+
+      if (io) {
+        for (const clusterId of ownedClusterIds) {
+          io.to(`cluster:${String(clusterId)}`).emit("cluster_deleted", {
+            clusterId: String(clusterId),
+          });
+        }
+      }
+
+      await Message.deleteMany({
+        cluster: { $in: ownedClusterIds },
+      });
+
+      await ClusterMember.deleteMany({
+        cluster: { $in: ownedClusterIds },
+      });
+
+      await Notification.deleteMany({
+        targetType: "Cluster",
+        target: { $in: ownedClusterIds },
+      });
+
+      await User.updateMany(
+        {
+          pinnedClusters: { $in: ownedClusterIds },
+        },
+        {
+          $pull: {
+            pinnedClusters: { $in: ownedClusterIds },
+          },
+        },
+      );
+
+      await Cluster.deleteMany({
+        _id: { $in: ownedClusterIds },
+      });
+    }
+
+    await Message.deleteMany({
+      $or: [
+        {
+          sender: userId,
+          recipient: { $ne: null },
+        },
+        {
+          recipient: userId,
+        },
+      ],
+    });
+
+    await Message.updateMany(
+      {
+        sender: userId,
+        cluster: { $ne: null },
+      },
+      {
+        $set: {
+          senderUsername: "Deleted User",
+        },
+      },
     );
 
-    await currentUser.save();
+    await Conversation.deleteMany({
+      participants: userId,
+    });
+
+    await ClusterMember.deleteMany({
+      user: userId,
+    });
+
+    await Notification.deleteMany({
+      $or: [
+        { recipient: userId },
+        { actor: userId },
+        {
+          targetType: "User",
+          target: userId,
+        },
+      ],
+    });
+
+    await User.updateMany(
+      {
+        $or: [
+          { friends: userId },
+          { friendRequestsSent: userId },
+          { friendRequestsReceived: userId },
+          { blockedUsers: userId },
+          { pinnedDMs: userId },
+        ],
+      },
+      {
+        $pull: {
+          friends: userId,
+          friendRequestsSent: userId,
+          friendRequestsReceived: userId,
+          blockedUsers: userId,
+          pinnedDMs: userId,
+        },
+      },
+    );
 
     const io = req.app.get("io");
 
     if (io) {
-      io.to(`user:${currentUser._id}`).emit("conversation_pin_updated", {
-        type: "dm",
-        targetId: String(req.params.userId),
-        pinned: false,
+      io.emit("presence_update", {
+        userId: String(userId),
+        status: "offline",
       });
+
+      io.emit("user_deleted", {
+        userId: String(userId),
+      });
+
+      io.in(`user:${String(userId)}`).disconnectSockets(true);
     }
 
-    return res.status(200).json({
-      message: "Conversation unpinned",
-      type: "dm",
-      targetId: String(req.params.userId),
-      pinned: false,
+    await User.deleteOne({
+      _id: userId,
+    });
+
+    return res.json({
+      message: "Account deleted permanently",
     });
   } catch (error) {
-    console.error("Unpin DM error:", error);
+    console.error("Delete account error:", error);
 
     return res.status(500).json({
-      message: "Failed to unpin conversation",
+      message: "Failed to delete account",
     });
   }
 });
@@ -584,34 +807,149 @@ router.delete("/me", authMiddleware, async (req, res) => {
       });
     }
 
+    const userId = user._id;
+
+    const ownedClusters = await Cluster.find({
+      owner: userId,
+    }).select("_id profilePicturePublicId");
+
+    const ownedClusterIds = ownedClusters.map((cluster) => cluster._id);
+
     if (user.profilePicturePublicId) {
       try {
         await cloudinary.uploader.destroy(user.profilePicturePublicId);
       } catch (error) {
         console.error(
-          "Failed to delete profile picture from Cloudinary:",
+          "Failed to delete user profile picture from Cloudinary:",
           error,
         );
       }
     }
 
-    user.isDeleted = true;
-    user.username = "Deleted User";
-    user.email = `deleted_${user._id}@chime.local`;
-    user.password = "DELETED_ACCOUNT";
-    user.profilePicture = "";
-    user.profilePicturePublicId = "";
+    for (const cluster of ownedClusters) {
+      if (cluster.profilePicturePublicId) {
+        try {
+          await cloudinary.uploader.destroy(cluster.profilePicturePublicId);
+        } catch (error) {
+          console.error(
+            `Failed to delete Cluster profile picture ${cluster._id}:`,
+            error,
+          );
+        }
+      }
+    }
 
-    await user.save();
+    if (ownedClusterIds.length > 0) {
+      const io = req.app.get("io");
 
-    res.json({
-      message: "Account deleted successfully",
+      if (io) {
+        for (const clusterId of ownedClusterIds) {
+          io.to(`cluster:${String(clusterId)}`).emit("cluster_deleted", {
+            clusterId: String(clusterId),
+          });
+        }
+      }
+
+      await Message.deleteMany({
+        cluster: { $in: ownedClusterIds },
+      });
+
+      await ClusterMember.deleteMany({
+        cluster: { $in: ownedClusterIds },
+      });
+
+      await Notification.deleteMany({
+        targetType: "Cluster",
+        target: { $in: ownedClusterIds },
+      });
+
+      await User.updateMany(
+        {
+          pinnedClusters: { $in: ownedClusterIds },
+        },
+        {
+          $pull: {
+            pinnedClusters: { $in: ownedClusterIds },
+          },
+        },
+      );
+
+      await Cluster.deleteMany({
+        _id: { $in: ownedClusterIds },
+      });
+    }
+
+    await Message.deleteMany({
+      $or: [{ sender: userId }, { recipient: userId }],
+    });
+
+    await Conversation.deleteMany({
+      participants: userId,
+    });
+
+    await ClusterMember.deleteMany({
+      user: userId,
+    });
+
+    await Notification.deleteMany({
+      $or: [
+        { recipient: userId },
+        { actor: userId },
+        {
+          targetType: "User",
+          target: userId,
+        },
+      ],
+    });
+
+    await User.updateMany(
+      {
+        $or: [
+          { friends: userId },
+          { friendRequestsSent: userId },
+          { friendRequestsReceived: userId },
+          { blockedUsers: userId },
+          { pinnedDMs: userId },
+        ],
+      },
+      {
+        $pull: {
+          friends: userId,
+          friendRequestsSent: userId,
+          friendRequestsReceived: userId,
+          blockedUsers: userId,
+          pinnedDMs: userId,
+        },
+      },
+    );
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.emit("presence_update", {
+        userId: String(userId),
+        status: "offline",
+      });
+
+      io.emit("user_deleted", {
+        userId: String(userId),
+      });
+
+      io.in(`user:${String(userId)}`).disconnectSockets(true);
+    }
+
+    await User.deleteOne({
+      _id: userId,
+    });
+
+    return res.json({
+      message: "Account deleted permanently",
     });
   } catch (error) {
     console.error("Delete account error:", error);
 
-    res.status(500).json({
-      message: "Server error",
+    return res.status(500).json({
+      message: "Failed to delete account",
     });
   }
 });

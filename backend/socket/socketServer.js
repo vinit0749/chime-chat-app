@@ -1,10 +1,11 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import "dotenv/config";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import passport from "../config/passport.js";
 
 import connectDB from "../config/db.js";
 import authRoutes from "../routes/authRoutes.js";
@@ -25,9 +26,9 @@ import Conversation from "../models/Conversation.js";
 import getOrCreateConversation from "../utils/conversation.js";
 import { createNotification } from "../utils/notificationService.js";
 
-dotenv.config();
-
 const app = express();
+
+app.use(passport.initialize());
 
 const PORT = process.env.PORT || 5000;
 

@@ -1,14 +1,17 @@
+import { useState } from "react";
 import {
   ArrowLeft,
   Check,
   Clock,
   Crown,
   Heart,
+  MoreVertical,
   UserPlus,
   Users,
   X,
 } from "lucide-react";
 import { authFetch } from "../../../shared/utils/authFetch";
+import NotificationsMenu from "./NotificationsMenu";
 
 function formatNotificationTime(createdAt) {
   if (!createdAt) {
@@ -193,7 +196,12 @@ function Notifications({
   loading,
   error,
   socket,
+  deleteAllNotifications,
+  deleteNotification,
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [notificationMenu, setNotificationMenu] = useState(null);
+
   const handleFriendRequest = async (notification, action) => {
     const userId = notification.actor?._id;
 
@@ -238,28 +246,92 @@ function Notifications({
     });
   };
 
+  const handleDeleteAll = async () => {
+    setMenuOpen(false);
+    await deleteAllNotifications();
+  };
+
+  const handleNotificationContextMenu = (event, notificationId) => {
+    event.preventDefault();
+
+    setMenuOpen(false);
+
+    setNotificationMenu({
+      notificationId,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
+  const handleDeleteNotification = async () => {
+    if (!notificationMenu?.notificationId) {
+      return;
+    }
+
+    const notificationId = notificationMenu.notificationId;
+
+    setNotificationMenu(null);
+
+    await deleteNotification(notificationId);
+  };
+
   return (
-    <section className="flex h-full min-w-0 flex-1 flex-col bg-chime-background">
-      <header className="flex h-16 shrink-0 items-center border-b border-stone-200 px-5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="mr-3 flex h-9 w-9 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text md:hidden"
-          aria-label="Go back"
-          title="Back"
-        >
-          <ArrowLeft size={19} />
-        </button>
+    <section
+      className="flex h-full min-w-0 flex-1 flex-col bg-chime-background"
+      onClick={() => {
+        if (menuOpen) {
+          setMenuOpen(false);
+        }
 
-        <div>
-          <h1 className="text-lg font-semibold text-chime-text">
-            Notifications
-          </h1>
+        if (notificationMenu) {
+          setNotificationMenu(null);
+        }
+      }}
+    >
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 px-5">
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onBack();
+            }}
+            className="mr-3 flex h-9 w-9 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text md:hidden"
+            aria-label="Go back"
+            title="Back"
+          >
+            <ArrowLeft size={19} />
+          </button>
 
-          {unreadCount > 0 && (
-            <p className="mt-0.5 text-xs text-chime-secondary">
-              {unreadCount} unread
-            </p>
+          <div>
+            <h1 className="text-lg font-semibold text-chime-text">
+              Notifications
+            </h1>
+
+            {unreadCount > 0 && (
+              <p className="mt-0.5 text-xs text-chime-secondary">
+                {unreadCount} unread
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="relative" onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => {
+              setNotificationMenu(null);
+              setMenuOpen((current) => !current);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+            aria-label="Notification options"
+            title="Options"
+          >
+            <MoreVertical size={19} />
+          </button>
+
+          {menuOpen && (
+            <NotificationsMenu mode="clear-all" onDeleteAll={handleDeleteAll} />
           )}
         </div>
       </header>
@@ -308,7 +380,10 @@ function Notifications({
               return (
                 <div
                   key={notification._id}
-                  className={`flex w-full items-center gap-3 border-b border-stone-200 px-5 py-4 transition ${
+                  onContextMenu={(event) =>
+                    handleNotificationContextMenu(event, notification._id)
+                  }
+                  className={`relative flex w-full items-center gap-3 border-b border-stone-200 px-5 py-4 transition ${
                     notification.read
                       ? "bg-chime-background"
                       : "bg-chime-selected/40"
@@ -423,6 +498,22 @@ function Notifications({
                   {!notification.read && (
                     <div className="shrink-0">
                       <span className="block h-2 w-2 rounded-full bg-chime-gold" />
+                    </div>
+                  )}
+
+                  {notificationMenu?.notificationId === notification._id && (
+                    <div
+                      className="fixed z-[100]"
+                      style={{
+                        left: notificationMenu.x,
+                        top: notificationMenu.y,
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <NotificationsMenu
+                        mode="delete"
+                        onDelete={handleDeleteNotification}
+                      />
                     </div>
                   )}
                 </div>

@@ -1,6 +1,41 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import User from "../models/User.js";
+import cloudinary from "./cloudinary.js";
+
+const isGoogleProfilePicture = (url) =>
+  typeof url === "string" && url.includes("googleusercontent.com");
+
+const uploadGoogleProfilePicture = async (profile) => {
+  const googleImageUrl = profile.photos?.[0]?.value;
+
+  if (!googleImageUrl) {
+    console.log("No Google profile picture found");
+    return "";
+  }
+
+  console.log("Google profile picture URL:", googleImageUrl);
+
+  try {
+    const result = await cloudinary.uploader.upload(googleImageUrl, {
+      folder: "chime/profile-pictures",
+      public_id: `google-${profile.id}`,
+      overwrite: true,
+      resource_type: "image",
+    });
+
+    console.log(
+      "Google profile picture uploaded to Cloudinary:",
+      result.secure_url,
+    );
+
+    return result.secure_url;
+  } catch (error) {
+    console.error("Google profile picture Cloudinary upload failed:", error);
+
+    throw error;
+  }
+};
 
 passport.use(
   new GoogleStrategy(
@@ -51,6 +86,11 @@ passport.use(
             });
           }
 
+          if (isGoogleProfilePicture(user.profilePicture)) {
+            user.profilePicture = await uploadGoogleProfilePicture(profile);
+            await user.save();
+          }
+
           return done(null, user);
         }
 
@@ -66,6 +106,8 @@ passport.use(
           counter += 1;
         }
 
+        const profilePicture = await uploadGoogleProfilePicture(profile);
+
         user = await User.create({
           username,
           displayName: profile.displayName || "",
@@ -73,13 +115,14 @@ passport.use(
           password: null,
           authProvider: "google",
           providerId: profile.id,
-          profilePicture: profile.photos?.[0]?.value || "",
+          profilePicture,
         });
 
         user.justCreatedFromGoogle = true;
 
         return done(null, user);
       } catch (error) {
+        console.error("Google authentication failed:", error);
         return done(error, null);
       }
     },

@@ -15,6 +15,7 @@ export function PresenceProvider({ children }) {
     }
 
     const presenceSocket = io(import.meta.env.VITE_BACKEND_URL, {
+      transports: ["websocket"],
       auth: {
         token,
       },

@@ -1593,10 +1593,8 @@ const getExistingConversation = async (userId, otherUserId) => {
 
 connectDB();
 
-if (!process.env.VERCEL) {
-  httpServer.listen(PORT, () => {
-    console.log(`Chime backend running on port ${PORT}`);
-  });
-}
+httpServer.listen(PORT, () => {
+  console.log(`Chime backend running on port ${PORT}`);
+});
 
 export { app, httpServer, io, getUserRoom, isUserOnline, emitToUser };

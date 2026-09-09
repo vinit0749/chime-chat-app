@@ -107,6 +107,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
     }
 
     const socket = io(SOCKET_URL, {
+      transports: ["websocket"],
       auth: {
         token,
       },

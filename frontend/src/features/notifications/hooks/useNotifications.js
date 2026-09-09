@@ -131,6 +131,7 @@ function useNotifications() {
     }
 
     const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
+      transports: ["websocket"],
       auth: {
         token,
       },

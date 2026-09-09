@@ -1,4 +1,4 @@
-import { app, httpServer, io } from "../socket/socketServer.js";
+import { io } from "../socket/socketServer.js";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { createClient } from "redis";
 
@@ -8,8 +8,19 @@ if (redisUrl) {
   const pubClient = createClient({ url: redisUrl });
   const subClient = pubClient.duplicate();
 
-  await Promise.all([pubClient.connect(), subClient.connect()]);
-  io.adapter(createAdapter(pubClient, subClient));
-}
+  pubClient.on("error", (error) => {
+    console.error("Redis Pub Client Error:", error);
+  });
 
-export default httpServer;
+  subClient.on("error", (error) => {
+    console.error("Redis Sub Client Error:", error);
+  });
+
+  await Promise.all([pubClient.connect(), subClient.connect()]);
+
+  io.adapter(createAdapter(pubClient, subClient));
+
+  console.log("Socket.IO Redis adapter connected");
+} else {
+  console.log("REDIS_URL not configured");
+}

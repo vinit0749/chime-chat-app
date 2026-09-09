@@ -26,6 +26,7 @@ function useSidebarSocket({
 }) {
   const blockedUserIdsRef = useRef(blockedUserIds);
   const blockedByUserIdsRef = useRef(blockedByUserIds);
+  const activeViewRef = useRef(activeView);
 
   const fetchCurrentUserRef = useRef(fetchCurrentUser);
   const fetchRequestsRef = useRef(fetchRequests);
@@ -42,6 +43,10 @@ function useSidebarSocket({
   useEffect(() => {
     blockedByUserIdsRef.current = blockedByUserIds;
   }, [blockedByUserIds]);
+
+  useEffect(() => {
+    activeViewRef.current = activeView;
+  }, [activeView]);
 
   useEffect(() => {
     fetchCurrentUserRef.current = fetchCurrentUser;
@@ -81,6 +86,7 @@ function useSidebarSocket({
     }
 
     const socket = io(import.meta.env.VITE_BACKEND_URL, {
+      transports: ["websocket"],
       auth: {
         token,
       },
@@ -175,7 +181,7 @@ function useSidebarSocket({
             return cluster;
           }
 
-          if (activeView === `cluster-${clusterId}`) {
+          if (activeViewRef.current === `cluster-${clusterId}`) {
             return {
               ...cluster,
               unreadCount: 0,
@@ -210,7 +216,7 @@ function useSidebarSocket({
             return cluster;
           }
 
-          if (activeView === `cluster-${clusterId}`) {
+          if (activeViewRef.current === `cluster-${clusterId}`) {
             return {
               ...cluster,
               unreadCount: 0,
@@ -459,10 +465,10 @@ function useSidebarSocket({
       setRequests((currentRequests) =>
         currentRequests.filter((request) => {
           const requesterId = String(
-            request?.requester?._id || request?.requester || "",
+            request?.requester?._id || request.requester || "",
           );
           const recipientId = String(
-            request?.recipient?._id || request?.recipient || "",
+            request?.recipient?._id || request.recipient || "",
           );
 
           return requesterId !== sentUserId && recipientId !== sentUserId;
@@ -899,7 +905,7 @@ function useSidebarSocket({
                   ...currentCluster,
                   ...cluster,
                   unreadCount:
-                    activeView === `cluster-${cluster._id}`
+                    activeViewRef.current === `cluster-${cluster._id}`
                       ? 0
                       : currentCluster.unreadCount,
                 }
@@ -1008,7 +1014,7 @@ function useSidebarSocket({
                 ...currentCluster,
                 ...cluster,
                 unreadCount:
-                  activeView === `cluster-${cluster._id}`
+                  activeViewRef.current === `cluster-${cluster._id}`
                     ? 0
                     : currentCluster.unreadCount,
               }
@@ -1187,7 +1193,6 @@ function useSidebarSocket({
     setDmMenu,
     setClusterMenu,
     setClusters,
-    activeView,
   ]);
 }
 

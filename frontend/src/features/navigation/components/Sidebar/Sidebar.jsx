@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import chimeLogo from "../../../../assets/chime_logo.png";
 import { Check, Clock, Heart, UserPlus } from "lucide-react";
 import useSidebarSocket from "../../hooks/useSidebarSocket";
 import useSidebarData from "../../hooks/useSidebarData";
@@ -419,7 +420,7 @@ function Sidebar({
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/friends/block/${unblockedId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/block/${unblockedId}`,
         {
           method: "DELETE",
           headers: {
@@ -492,7 +493,7 @@ function Sidebar({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/users/pins/dm/${userId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/pins/dm/${userId}`,
         {
           method: "POST",
         },
@@ -556,7 +557,7 @@ function Sidebar({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/users/pins/dm/${userId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/pins/dm/${userId}`,
         {
           method: "DELETE",
         },
@@ -613,7 +614,7 @@ function Sidebar({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/users/pins/cluster/${clusterId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/pins/cluster/${clusterId}`,
         {
           method: "POST",
         },
@@ -686,7 +687,7 @@ function Sidebar({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/users/pins/cluster/${clusterId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/pins/cluster/${clusterId}`,
         {
           method: "DELETE",
         },
@@ -752,7 +753,7 @@ function Sidebar({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/messages/dm/${otherUserId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/messages/dm/${otherUserId}`,
         {
           method: "DELETE",
         },
@@ -1088,6 +1089,12 @@ function Sidebar({
             className="flex items-center gap-2 text-left"
             aria-label="Go to Chime home"
           >
+            <img
+              src={chimeLogo}
+              alt="Chime"
+              className="h-9 w-auto object-contain"
+            />
+
             <span className="relative text-[27px] font-black uppercase tracking-[0.1em] text-chime-text">
               <span className="absolute left-0 top-1 text-chime-gold/30">
                 CHIME
@@ -1099,8 +1106,6 @@ function Sidebar({
 
               <span className="absolute -bottom-1 left-0 h-0.5 w-full bg-chime-gold/70" />
             </span>
-
-            <span className="text-[20px] leading-none">🔔</span>
           </button>
 
           <button

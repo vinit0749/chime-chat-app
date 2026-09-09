@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import chimeLogo from "../../../assets/chime_logo.png";
+
 function Login() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -11,7 +13,7 @@ function Login() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleGoogleLogin = () => {
-    window.location.href = "http://localhost:5000/api/auth/google";
+    window.location.href = `${import.meta.env.VITE_BACKEND_URL}/api/auth/google`;
   };
 
   const handleLogin = async (event) => {
@@ -21,16 +23,19 @@ function Login() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/api/auth/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
         },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
+      );
 
       const data = await response.json();
 
@@ -58,9 +63,13 @@ function Login() {
         <div className="mb-8 text-center">
           <Link
             to="/"
-            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-chime-gold text-2xl shadow-sm transition hover:bg-chime-bright"
+            className="mx-auto block w-fit transition hover:opacity-80"
           >
-            🔔
+            <img
+              src={chimeLogo}
+              alt="Chime"
+              className="mx-auto h-20 w-auto object-contain"
+            />
           </Link>
 
           <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-chime-text">

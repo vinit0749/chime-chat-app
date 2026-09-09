@@ -47,14 +47,14 @@ function useChatMessages({ selectedChat, user }) {
             return;
           }
 
-          url = `http://localhost:5000/api/messages/dm/${selectedChat.user._id}`;
+          url = `${import.meta.env.VITE_BACKEND_URL}/api/messages/dm/${selectedChat.user._id}`;
         } else if (selectedChat.type === "cluster") {
           if (!selectedChat.cluster?._id) {
             setMessages([]);
             return;
           }
 
-          url = `http://localhost:5000/api/clusters/${selectedChat.cluster._id}/messages`;
+          url = `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${selectedChat.cluster._id}/messages`;
         } else {
           setMessages([]);
           return;
@@ -252,7 +252,7 @@ function useChatMessages({ selectedChat, user }) {
       }
 
       const response = await authFetch(
-        `http://localhost:5000/api/messages/search?${params.toString()}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/messages/search?${params.toString()}`,
       );
 
       const data = await response.json();

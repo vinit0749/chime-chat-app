@@ -65,14 +65,10 @@ function useChatSocket({
       return;
     }
 
-    const newSocket = io("http://localhost:5000", {
+    const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
       auth: {
         token,
       },
-    });
-
-    newSocket.on("connect", () => {
-      console.log("Chat socket connected:", newSocket.id);
     });
 
     newSocket.on("connect_error", (error) => {
@@ -176,6 +172,71 @@ function useChatSocket({
       setIsOtherUserTyping(false);
       setReplyingTo(null);
       setEditingMessage(null);
+    });
+
+    newSocket.on("user_profile_updated", (payload) => {
+      const updatedUser = payload?.user || payload;
+
+      if (!updatedUser?._id) {
+        return;
+      }
+
+      const currentChat = selectedChatRef.current;
+
+      if (!currentChat || currentChat.type !== "dm") {
+        return;
+      }
+
+      if (String(currentChat.user?._id) !== String(updatedUser._id)) {
+        return;
+      }
+
+      selectedChatRef.current = {
+        ...currentChat,
+        user: {
+          ...currentChat.user,
+          username: updatedUser.username ?? currentChat.user?.username,
+          displayName: updatedUser.displayName ?? currentChat.user?.displayName,
+          profilePicture:
+            updatedUser.profilePicture ?? currentChat.user?.profilePicture,
+          status: updatedUser.status ?? currentChat.user?.status,
+        },
+      };
+
+      setMessages((currentMessages) =>
+        currentMessages.map((message) => {
+          if (String(message?.sender?._id) === String(updatedUser._id)) {
+            return {
+              ...message,
+              sender: {
+                ...message.sender,
+                username: updatedUser.username ?? message.sender?.username,
+                displayName:
+                  updatedUser.displayName ?? message.sender?.displayName,
+                profilePicture:
+                  updatedUser.profilePicture ?? message.sender?.profilePicture,
+              },
+            };
+          }
+
+          if (String(message?.recipient?._id) === String(updatedUser._id)) {
+            return {
+              ...message,
+              recipient: {
+                ...message.recipient,
+                username: updatedUser.username ?? message.recipient?.username,
+                displayName:
+                  updatedUser.displayName ?? message.recipient?.displayName,
+                profilePicture:
+                  updatedUser.profilePicture ??
+                  message.recipient?.profilePicture,
+              },
+            };
+          }
+
+          return message;
+        }),
+      );
     });
 
     newSocket.on("user_deleted", ({ userId }) => {

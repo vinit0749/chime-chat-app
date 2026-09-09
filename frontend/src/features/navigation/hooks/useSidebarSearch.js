@@ -27,7 +27,7 @@ function useSidebarSearch({
 
       try {
         const response = await authFetch(
-          `http://localhost:5000/api/users/search?q=${encodeURIComponent(
+          `${import.meta.env.VITE_BACKEND_URL}/api/users/search?q=${encodeURIComponent(
             search.trim(),
           )}`,
         );

@@ -14,7 +14,7 @@ import {
 import { authFetch } from "../../../shared/utils/authFetch";
 import ConfirmModal from "../../../shared/components/ConfirmModal";
 
-const SOCKET_URL = "http://localhost:5000";
+const SOCKET_URL = import.meta.env.VITE_BACKEND_URL;
 
 function PublicProfile({ userId, onBack, onMessage }) {
   const [profile, setProfile] = useState({
@@ -54,7 +54,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
         setError("");
 
         const response = await authFetch(
-          `http://localhost:5000/api/users/${userId}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/users/${userId}`,
         );
 
         const data = await response.json();
@@ -175,7 +175,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/request/${profile._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/request/${profile._id}`,
         {
           method: "POST",
         },
@@ -210,7 +210,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/accept/${profile._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/accept/${profile._id}`,
         {
           method: "POST",
         },
@@ -257,7 +257,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/${profile._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/${profile._id}`,
         {
           method: "DELETE",
         },
@@ -305,7 +305,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/block/${profile._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/block/${profile._id}`,
         {
           method: "POST",
         },
@@ -364,7 +364,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/block/${profile._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/block/${profile._id}`,
         {
           method: "DELETE",
         },
@@ -586,7 +586,7 @@ function PublicProfile({ userId, onBack, onMessage }) {
   const displayName = profile.displayName || profile.username || "User";
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-chime-background">
+    <section className="chime-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto bg-chime-background">
       <header className="flex h-16 shrink-0 items-center border-b border-stone-200 bg-chime-background px-5 md:px-8">
         <button
           type="button"

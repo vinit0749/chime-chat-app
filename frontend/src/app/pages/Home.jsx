@@ -1,26 +1,23 @@
 import { Link } from "react-router-dom";
+import chimeLogo from "../../assets/chime_logo.png";
 
 function Home() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-chime-background px-6 py-12">
       <div className="w-full max-w-2xl text-center">
-        {/* Brand */}
         <div className="mb-8">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-chime-gold text-4xl shadow-sm">
-            🔔
-          </div>
+          <img
+            src={chimeLogo}
+            alt="Chime"
+            className="mx-auto h-40 w-auto object-contain sm:h-44"
+          />
 
-          <h1 className="mt-6 text-5xl font-extrabold tracking-tight text-chime-text sm:text-6xl">
-            Chime
-          </h1>
-
-          <p className="mx-auto mt-5 max-w-lg text-lg leading-8 text-chime-secondary sm:text-xl">
+          <p className="mx-auto mt-2 max-w-lg text-lg leading-8 text-chime-secondary sm:text-xl">
             A warm, simple place to talk, connect, and share moments with your
             people.
           </p>
         </div>
 
-        {/* Actions */}
         <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Link
             to="/register"
@@ -37,7 +34,6 @@ function Home() {
           </Link>
         </div>
 
-        {/* Small brand statement */}
         <p className="mt-10 text-sm text-chime-secondary">
           Connect. Talk. Belong.
         </p>

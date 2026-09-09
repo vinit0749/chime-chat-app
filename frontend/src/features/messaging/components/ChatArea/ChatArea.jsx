@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import chimeLogo from "../../../../assets/chime_logo.png";
 import {
   ArrowLeft,
   MessageCircle,
@@ -373,7 +374,7 @@ function ChatArea({
     const markConversationRead = async () => {
       try {
         await authFetch(
-          `http://localhost:5000/api/messages/dm/${otherUserId}/read`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/messages/dm/${otherUserId}/read`,
           {
             method: "PATCH",
           },
@@ -470,7 +471,7 @@ function ChatArea({
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/messages/${messageId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/messages/${messageId}`,
         {
           method: "DELETE",
           headers: {
@@ -530,7 +531,7 @@ function ChatArea({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/messages/dm/${otherUserId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/messages/dm/${otherUserId}`,
         {
           method: "DELETE",
         },
@@ -658,7 +659,7 @@ function ChatArea({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/messages/cluster/${clusterId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/messages/cluster/${clusterId}`,
         {
           method: "DELETE",
         },
@@ -708,7 +709,7 @@ function ChatArea({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${clusterId}/leave`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${clusterId}/leave`,
         {
           method: "DELETE",
         },
@@ -746,7 +747,7 @@ function ChatArea({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${clusterId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${clusterId}`,
         {
           method: "DELETE",
         },
@@ -798,11 +799,13 @@ function ChatArea({
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
         <div className="flex min-h-0 flex-1 items-center justify-center px-6">
           <div className="max-w-md text-center">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-chime-gold shadow-sm">
-              <Bell size={32} className="text-chime-text" />
-            </div>
+            <img
+              src={chimeLogo}
+              alt="Chime"
+              className="mx-auto h-32 w-auto object-contain sm:h-36"
+            />
 
-            <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-chime-text">
+            <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-chime-text">
               Welcome to Chime
             </h1>
 

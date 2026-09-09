@@ -65,8 +65,8 @@ function Profile({ userId, onBack }) {
         setSuccess("");
 
         const url = isOwnProfile
-          ? "http://localhost:5000/api/users/me"
-          : `http://localhost:5000/api/users/${userId}`;
+          ? `${import.meta.env.VITE_BACKEND_URL}/api/users/me`
+          : `${import.meta.env.VITE_BACKEND_URL}/api/users/${userId}`;
 
         const response = await authFetch(url);
         const data = await response.json();
@@ -89,7 +89,7 @@ function Profile({ userId, onBack }) {
 
         if (!isOwnProfile) {
           const friendsResponse = await authFetch(
-            "http://localhost:5000/api/friends",
+            `${import.meta.env.VITE_BACKEND_URL}/api/friends`,
           );
 
           if (friendsResponse.ok) {
@@ -286,7 +286,7 @@ function Profile({ userId, onBack }) {
       );
 
       const response = await authFetch(
-        "http://localhost:5000/api/users/me/profile-picture",
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/me/profile-picture`,
         {
           method: "PUT",
           body: formData,
@@ -334,7 +334,7 @@ function Profile({ userId, onBack }) {
       setSuccess("");
 
       const response = await authFetch(
-        "http://localhost:5000/api/users/me/profile-picture",
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/me/profile-picture`,
         {
           method: "DELETE",
         },
@@ -378,18 +378,21 @@ function Profile({ userId, onBack }) {
       setError("");
       setSuccess("");
 
-      const response = await authFetch("http://localhost:5000/api/users/me", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await authFetch(
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/me`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username: profile.username,
+            displayName: profile.displayName,
+            bio: profile.bio,
+            status: profile.status,
+          }),
         },
-        body: JSON.stringify({
-          username: profile.username,
-          displayName: profile.displayName,
-          bio: profile.bio,
-          status: profile.status,
-        }),
-      });
+      );
 
       const data = await response.json();
 
@@ -435,9 +438,12 @@ function Profile({ userId, onBack }) {
       setDeletingAccount(true);
       setError("");
 
-      const response = await authFetch("http://localhost:5000/api/users/me", {
-        method: "DELETE",
-      });
+      const response = await authFetch(
+        `${import.meta.env.VITE_BACKEND_URL}/api/users/me`,
+        {
+          method: "DELETE",
+        },
+      );
 
       const data = await response.json();
 
@@ -595,7 +601,7 @@ function Profile({ userId, onBack }) {
 
   return (
     <>
-      <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-chime-background">
+      <section className="chime-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto bg-chime-background">
         <header className="flex h-16 shrink-0 items-center border-b border-stone-200 px-5 md:px-8">
           <button
             type="button"

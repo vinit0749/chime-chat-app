@@ -80,7 +80,7 @@ function useSidebarSocket({
       return;
     }
 
-    const socket = io("http://localhost:5000", {
+    const socket = io(import.meta.env.VITE_BACKEND_URL, {
       auth: {
         token,
       },
@@ -153,6 +153,76 @@ function useSidebarSocket({
 
         return nextPresence;
       });
+    });
+
+    socket.on("new_cluster_message", (data) => {
+      const clusterId = String(data?.clusterId || data?.message?.cluster || "");
+
+      if (!clusterId) {
+        return;
+      }
+
+      const message = data?.message || data;
+      const senderId = String(message?.sender?._id || message?.sender || "");
+
+      if (!senderId || senderId === String(userId)) {
+        return;
+      }
+
+      setClusters((currentClusters) =>
+        currentClusters.map((cluster) => {
+          if (String(cluster._id) !== clusterId) {
+            return cluster;
+          }
+
+          if (activeView === `cluster-${clusterId}`) {
+            return {
+              ...cluster,
+              unreadCount: 0,
+            };
+          }
+
+          return {
+            ...cluster,
+            unreadCount: Math.max(0, (cluster.unreadCount || 0) + 1),
+          };
+        }),
+      );
+    });
+
+    socket.on("cluster_message_received", (data) => {
+      const clusterId = String(data?.clusterId || data?.message?.cluster || "");
+
+      if (!clusterId) {
+        return;
+      }
+
+      const message = data?.message || data;
+      const senderId = String(message?.sender?._id || message?.sender || "");
+
+      if (!senderId || senderId === String(userId)) {
+        return;
+      }
+
+      setClusters((currentClusters) =>
+        currentClusters.map((cluster) => {
+          if (String(cluster._id) !== clusterId) {
+            return cluster;
+          }
+
+          if (activeView === `cluster-${clusterId}`) {
+            return {
+              ...cluster,
+              unreadCount: 0,
+            };
+          }
+
+          return {
+            ...cluster,
+            unreadCount: Math.max(0, (cluster.unreadCount || 0) + 1),
+          };
+        }),
+      );
     });
 
     socket.on("new_message", (data) => {
@@ -374,6 +444,28 @@ function useSidebarSocket({
           }
 
           return request;
+        }),
+      );
+    });
+
+    socket.on("friend_request_sent", (data) => {
+      const sentUser = data?.user || data;
+      const sentUserId = String(sentUser?._id || sentUser || "");
+
+      if (!sentUserId) {
+        return;
+      }
+
+      setRequests((currentRequests) =>
+        currentRequests.filter((request) => {
+          const requesterId = String(
+            request?.requester?._id || request?.requester || "",
+          );
+          const recipientId = String(
+            request?.recipient?._id || request?.recipient || "",
+          );
+
+          return requesterId !== sentUserId && recipientId !== sentUserId;
         }),
       );
     });
@@ -1056,12 +1148,23 @@ function useSidebarSocket({
       onClusterDeletedRef.current?.(clusterId);
     });
 
-    socket.on("cluster_membership_updated", () => {
-      fetchClustersRef.current?.();
-    });
+    socket.on("cluster_chat_wiped", (data) => {
+      const clusterId = String(data?.clusterId || "");
 
-    socket.on("cluster_membership_changed", () => {
-      fetchClustersRef.current?.();
+      if (!clusterId) {
+        return;
+      }
+
+      setClusters((currentClusters) =>
+        currentClusters.map((cluster) =>
+          String(cluster._id) === clusterId
+            ? {
+                ...cluster,
+                unreadCount: 0,
+              }
+            : cluster,
+        ),
+      );
     });
 
     socket.on("connect_error", (error) => {

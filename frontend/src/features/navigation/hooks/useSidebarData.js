@@ -13,7 +13,7 @@ function useSidebarData({
 }) {
   const fetchCurrentUser = async () => {
     try {
-      const response = await authFetch("http://localhost:5000/api/users/me");
+      const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/api/users/me`);
 
       if (response.status === 401) {
         return null;
@@ -55,7 +55,7 @@ function useSidebarData({
 
   const fetchFriends = async () => {
     try {
-      const response = await authFetch("http://localhost:5000/api/friends");
+      const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/api/friends`);
 
       if (response.status === 401) return;
 
@@ -112,7 +112,7 @@ function useSidebarData({
   const fetchConversations = async (currentUser = null) => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/messages/dms",
+        `${import.meta.env.VITE_BACKEND_URL}/api/messages/dms`,
       );
 
       if (response.status === 401) return;
@@ -139,7 +139,7 @@ function useSidebarData({
   const fetchRequests = async () => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/friends/requests",
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/requests`,
       );
 
       if (response.status === 401) return;
@@ -157,7 +157,7 @@ function useSidebarData({
   const fetchClusters = async (currentUser = null) => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/clusters/mine",
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/mine`,
       );
 
       if (response.status === 401) return;

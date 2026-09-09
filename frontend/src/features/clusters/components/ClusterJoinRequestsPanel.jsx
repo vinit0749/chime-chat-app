@@ -21,7 +21,7 @@ function ClusterJoinRequestsPanel({ cluster, socket }) {
 
       try {
         const response = await authFetch(
-          `http://localhost:5000/api/clusters/${cluster._id}/requests`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/requests`,
         );
 
         const data = await response.json();
@@ -154,7 +154,7 @@ function ClusterJoinRequestsPanel({ cluster, socket }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/requests/${userId}/approve`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/requests/${userId}/approve`,
         {
           method: "PATCH",
         },
@@ -193,7 +193,7 @@ function ClusterJoinRequestsPanel({ cluster, socket }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/requests/${userId}/reject`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/requests/${userId}/reject`,
         {
           method: "DELETE",
         },

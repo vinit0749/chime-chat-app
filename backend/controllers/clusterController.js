@@ -309,6 +309,10 @@ export const createCluster = async (req, res) => {
     const emitToUser = req.app.get("emitToUser");
 
     if (emitToUser) {
+      emitToUser(userId, "cluster_created", {
+        cluster: formattedCluster,
+      });
+
       emitToUser(userId, "cluster_joined", {
         cluster: formattedCluster,
       });
@@ -523,6 +527,12 @@ export const addClusterMember = async (req, res) => {
     if (!currentMembership) {
       return res.status(403).json({
         message: "You are not a member of this Cluster",
+      });
+    }
+
+    if (currentMembership.role !== "owner") {
+      return res.status(403).json({
+        message: "Only the Cluster owner can add members",
       });
     }
 
@@ -1179,7 +1189,17 @@ export const approveClusterJoinRequest = async (req, res) => {
       },
     });
 
+    const formattedCluster = await formatCluster(cluster, {
+      role: "member",
+      membershipStatus: "active",
+      isMember: true,
+    });
+
     if (emitToUser) {
+      emitToUser(String(userId), "cluster_joined", {
+        cluster: formattedCluster,
+      });
+
       emitToUser(String(userId), "cluster_join_request_approved", {
         clusterId: String(clusterId),
       });
@@ -1206,6 +1226,7 @@ export const approveClusterJoinRequest = async (req, res) => {
     return res.status(200).json({
       message: "Join request approved",
       memberCount,
+      cluster: formattedCluster,
     });
   } catch (error) {
     console.error("Approve Cluster join request error:", error);

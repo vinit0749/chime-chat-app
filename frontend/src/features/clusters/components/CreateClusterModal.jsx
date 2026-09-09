@@ -248,10 +248,13 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
         );
       }
 
-      const response = await authFetch("http://localhost:5000/api/clusters", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await authFetch(
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
       const data = await response.json();
 
@@ -301,7 +304,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
 
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/clusters/join-private",
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/join-private`,
         {
           method: "POST",
           headers: {
@@ -393,7 +396,7 @@ function CreateClusterModal({ isOpen, onClose, onCreated, onOpenDiscover }) {
             </div>
           </div>
 
-          <div className="min-h-0 overflow-y-auto border-t border-stone-200">
+          <div className="chime-scrollbar min-h-0 overflow-y-auto border-t border-stone-200">
             {mode === "create" ? (
               <form onSubmit={handleSubmit} className="space-y-6 p-6">
                 <div className="space-y-3">

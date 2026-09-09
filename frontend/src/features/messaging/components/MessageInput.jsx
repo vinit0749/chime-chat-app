@@ -186,7 +186,7 @@ function MessageInput({
 
       try {
         const response = await authFetch(
-          `http://localhost:5000/api/messages/${editingMessage._id}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/messages/${editingMessage._id}`,
           {
             method: "PATCH",
             headers: {

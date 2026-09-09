@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import "dotenv/config";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
@@ -28,6 +30,31 @@ import { createNotification } from "../utils/notificationService.js";
 
 const app = express();
 
+const trustedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || trustedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+};
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(helmet());
 app.use(passport.initialize());
 
 const PORT = process.env.PORT || 5000;
@@ -36,14 +63,16 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: trustedOrigins,
+    credentials: true,
   },
 });
 
 app.set("io", io);
 
-app.use(cors());
-app.use(express.json());
+app.use(cors(corsOptions));
+app.use(generalLimiter);
+app.use(express.json({ limit: "1mb" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
@@ -56,7 +85,7 @@ app.get("/", (req, res) => {
   res.send("Chime backend is running!");
 });
 
-const onlineUsers = new Map();
+const getUserRoom = (userId) => `user:${String(userId)}`;
 
 const getClusterRoom = (clusterId) => {
   return `cluster:${String(clusterId)}`;
@@ -105,14 +134,13 @@ const broadcastPresence = async (userId) => {
       return;
     }
 
-    const sockets = onlineUsers.get(normalizedUserId);
-    const isConnected = Boolean(sockets && sockets.size > 0);
+    const isConnected = isUserOnline(normalizedUserId);
 
     const actualStatus = getEffectiveStatus(user, isConnected);
 
-    const onlineUserIds = Array.from(onlineUsers.entries())
-      .filter(([, userSockets]) => userSockets && userSockets.size > 0)
-      .map(([connectedUserId]) => connectedUserId);
+    const onlineUserIds = Array.from(io.sockets.adapter.rooms.keys())
+      .filter((roomName) => String(roomName).startsWith("user:"))
+      .map((roomName) => String(roomName).replace(/^user:/, ""));
 
     if (onlineUserIds.length === 0) {
       return;
@@ -133,23 +161,15 @@ const broadcastPresence = async (userId) => {
     );
 
     for (const recipientId of onlineUserIds) {
-      const recipientSockets = onlineUsers.get(recipientId);
-
-      if (!recipientSockets || recipientSockets.size === 0) {
-        continue;
-      }
-
       const recipientUser = connectedUsersById.get(recipientId);
 
       const blockedRelationship = isBlockedRelationship(user, recipientUser);
 
       const statusToSend = blockedRelationship ? "offline" : actualStatus;
 
-      recipientSockets.forEach((socketId) => {
-        io.to(socketId).emit("presence_update", {
-          userId: normalizedUserId,
-          status: statusToSend,
-        });
+      io.to(getUserRoom(recipientId)).emit("presence_update", {
+        userId: normalizedUserId,
+        status: statusToSend,
       });
     }
   } catch (error) {
@@ -158,21 +178,13 @@ const broadcastPresence = async (userId) => {
 };
 
 const isUserOnline = (userId) => {
-  const sockets = onlineUsers.get(String(userId));
+  const userRoom = io.sockets.adapter.rooms.get(getUserRoom(userId));
 
-  return Boolean(sockets && sockets.size > 0);
+  return Boolean(userRoom && userRoom.size > 0);
 };
 
 const emitToUser = (userId, event, data) => {
-  const sockets = onlineUsers.get(String(userId));
-
-  if (!sockets) {
-    return;
-  }
-
-  sockets.forEach((socketId) => {
-    io.to(socketId).emit(event, data);
-  });
+  io.to(getUserRoom(userId)).emit(event, data);
 };
 
 app.set("emitToUser", emitToUser);
@@ -198,13 +210,10 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   const userId = String(socket.user.userId);
 
-  if (!onlineUsers.has(userId)) {
-    onlineUsers.set(userId, new Set());
-  }
-
-  onlineUsers.get(userId).add(socket.id);
-
   socket.clusterRooms = new Set();
+  socket.messageTimestamps = [];
+
+  socket.join(getUserRoom(userId));
 
   socket.on("status_changed", async () => {
     await broadcastPresence(userId);
@@ -214,11 +223,49 @@ io.on("connection", (socket) => {
     try {
       const { senderId } = data || {};
 
-      if (!senderId) {
+      if (!senderId || !mongoose.Types.ObjectId.isValid(senderId)) {
         return;
       }
 
       const senderIdString = String(senderId);
+
+      if (String(senderIdString) === String(userId)) {
+        return;
+      }
+
+      const [sender, target, friendship] = await Promise.all([
+        User.findById(senderIdString).select("_id isDeleted blockedUsers"),
+        User.findById(userId).select("_id blockedUsers"),
+        Friendship.findOne({
+          status: "accepted",
+          $or: [
+            {
+              requester: userId,
+              recipient: senderIdString,
+            },
+            {
+              requester: senderIdString,
+              recipient: userId,
+            },
+          ],
+        }),
+      ]);
+
+      if (!sender || sender.isDeleted || !target || !friendship) {
+        return;
+      }
+
+      const isBlocked =
+        (target.blockedUsers || []).some(
+          (blockedId) => String(blockedId) === senderIdString,
+        ) ||
+        (sender.blockedUsers || []).some(
+          (blockedId) => String(blockedId) === String(userId),
+        );
+
+      if (isBlocked) {
+        return;
+      }
 
       const unreadMessages = await Message.find({
         sender: senderIdString,
@@ -338,7 +385,7 @@ io.on("connection", (socket) => {
     try {
       const { recipient } = data || {};
 
-      if (!recipient) {
+      if (!recipient || !mongoose.Types.ObjectId.isValid(recipient)) {
         return;
       }
 
@@ -348,27 +395,33 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const recipientUser =
-        await User.findById(recipientId).select("_id isDeleted");
+      const recipientUser = await User.findById(recipientId).select(
+        "_id isDeleted blockedUsers",
+      );
 
       if (!recipientUser || recipientUser.isDeleted) {
         return;
       }
 
       const [currentUser, targetUser] = await Promise.all([
-        User.findById(userId).select("blockedUsers"),
-        User.findById(recipientId).select("blockedUsers"),
+        User.findById(userId).select("blockedUsers isDeleted"),
+        User.findById(recipientId).select("blockedUsers isDeleted"),
       ]);
 
-      if (!currentUser || !targetUser) {
+      if (
+        !currentUser ||
+        !targetUser ||
+        currentUser.isDeleted ||
+        targetUser.isDeleted
+      ) {
         return;
       }
 
       const isBlocked =
-        currentUser.blockedUsers.some(
+        (currentUser.blockedUsers || []).some(
           (blockedId) => String(blockedId) === recipientId,
         ) ||
-        targetUser.blockedUsers.some(
+        (targetUser.blockedUsers || []).some(
           (blockedId) => String(blockedId) === userId,
         );
 
@@ -406,7 +459,7 @@ io.on("connection", (socket) => {
     try {
       const { recipient } = data || {};
 
-      if (!recipient) {
+      if (!recipient || !mongoose.Types.ObjectId.isValid(recipient)) {
         return;
       }
 
@@ -416,21 +469,43 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const friendship = await Friendship.findOne({
-        status: "accepted",
-        $or: [
-          {
-            requester: userId,
-            recipient: recipientId,
-          },
-          {
-            requester: recipientId,
-            recipient: userId,
-          },
-        ],
-      });
+      const [currentUser, targetUser, friendship] = await Promise.all([
+        User.findById(userId).select("blockedUsers isDeleted"),
+        User.findById(recipientId).select("blockedUsers isDeleted"),
+        Friendship.findOne({
+          status: "accepted",
+          $or: [
+            {
+              requester: userId,
+              recipient: recipientId,
+            },
+            {
+              requester: recipientId,
+              recipient: userId,
+            },
+          ],
+        }),
+      ]);
 
-      if (!friendship) {
+      if (
+        !currentUser ||
+        !targetUser ||
+        currentUser.isDeleted ||
+        targetUser.isDeleted ||
+        !friendship
+      ) {
+        return;
+      }
+
+      const isBlocked =
+        (currentUser.blockedUsers || []).some(
+          (blockedId) => String(blockedId) === recipientId,
+        ) ||
+        (targetUser.blockedUsers || []).some(
+          (blockedId) => String(blockedId) === userId,
+        );
+
+      if (isBlocked) {
         return;
       }
 
@@ -630,6 +705,25 @@ io.on("connection", (socket) => {
         return;
       }
 
+      if (content.trim().length > 2000) {
+        return socket.emit("cluster_error", {
+          message: "Message content cannot exceed 2000 characters",
+        });
+      }
+
+      const now = Date.now();
+      socket.messageTimestamps = socket.messageTimestamps.filter(
+        (timestamp) => now - timestamp < 1000,
+      );
+
+      if (socket.messageTimestamps.length >= 8) {
+        return socket.emit("cluster_error", {
+          message: "You are sending messages too quickly",
+        });
+      }
+
+      socket.messageTimestamps.push(now);
+
       if (!/^[a-fA-F0-9]{24}$/.test(String(clusterId))) {
         return socket.emit("cluster_error", {
           message: "Invalid Cluster ID",
@@ -752,19 +846,40 @@ io.on("connection", (socket) => {
         return;
       }
 
-      if (!recipient) {
+      if (content.trim().length > 2000) {
+        return socket.emit("message_error", {
+          message: "Message content cannot exceed 2000 characters",
+        });
+      }
+
+      if (!recipient || !mongoose.Types.ObjectId.isValid(recipient)) {
+        return socket.emit("message_error", {
+          message: "Invalid recipient ID",
+        });
+      }
+
+      const now = Date.now();
+      socket.messageTimestamps = socket.messageTimestamps.filter(
+        (timestamp) => now - timestamp < 1000,
+      );
+
+      if (socket.messageTimestamps.length >= 8) {
+        return socket.emit("message_error", {
+          message: "You are sending messages too quickly",
+        });
+      }
+
+      socket.messageTimestamps.push(now);
+
+      const recipientId = String(recipient);
+
+      if (recipientId === userId) {
         return;
       }
 
       const sender = await User.findById(userId);
 
       if (!sender || sender.isDeleted) {
-        return;
-      }
-
-      const recipientId = String(recipient);
-
-      if (recipientId === userId) {
         return;
       }
 
@@ -1304,6 +1419,10 @@ io.on("connection", (socket) => {
           createdAt: updatedCluster.createdAt,
         };
 
+        emitToUser(userId, "cluster_joined", {
+          cluster: clusterPayload,
+        });
+
         emitToUser(userId, "cluster_joined_realtime", {
           cluster: clusterPayload,
         });
@@ -1386,16 +1505,6 @@ io.on("connection", (socket) => {
       }
     }
 
-    const sockets = onlineUsers.get(userId);
-
-    if (sockets) {
-      sockets.delete(socket.id);
-
-      if (sockets.size === 0) {
-        onlineUsers.delete(userId);
-      }
-    }
-
     await broadcastPresence(userId);
   });
 
@@ -1404,11 +1513,12 @@ io.on("connection", (socket) => {
 
     const currentUser = await User.findById(userId).select("_id blockedUsers");
 
-    for (const [onlineUserId, sockets] of onlineUsers.entries()) {
-      if (onlineUserId === userId || sockets.size === 0) {
-        continue;
-      }
+    const onlineUserIds = Array.from(io.sockets.adapter.rooms.keys())
+      .filter((roomName) => String(roomName).startsWith("user:"))
+      .map((roomName) => String(roomName).replace(/^user:/, ""))
+      .filter((onlineUserId) => onlineUserId !== userId);
 
+    for (const onlineUserId of onlineUserIds) {
       try {
         const onlineUser = await User.findById(onlineUserId).select(
           "_id status isDeleted blockedUsers",
@@ -1481,6 +1591,10 @@ const getExistingConversation = async (userId, otherUserId) => {
 
 connectDB();
 
-httpServer.listen(PORT, () => {
-  console.log(`Chime backend running on port ${PORT}`);
-});
+if (!process.env.VERCEL) {
+  httpServer.listen(PORT, () => {
+    console.log(`Chime backend running on port ${PORT}`);
+  });
+}
+
+export { app, httpServer, io, getUserRoom, isUserOnline, emitToUser };

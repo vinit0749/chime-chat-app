@@ -34,8 +34,8 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
   const fetchData = async () => {
     try {
       const [requestsResponse, friendsResponse] = await Promise.all([
-        authFetch("http://localhost:5000/api/friends/requests"),
-        authFetch("http://localhost:5000/api/friends"),
+        authFetch(`${import.meta.env.VITE_BACKEND_URL}/api/friends/requests`),
+        authFetch(`${import.meta.env.VITE_BACKEND_URL}/api/friends`),
       ]);
 
       const requestsData = await requestsResponse.json();
@@ -57,10 +57,6 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
 
   useEffect(() => {
     fetchData();
-
-    const interval = setInterval(fetchData, 2000);
-
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -75,7 +71,7 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
 
       try {
         const response = await authFetch(
-          `http://localhost:5000/api/users/search?q=${encodeURIComponent(
+          `${import.meta.env.VITE_BACKEND_URL}/api/users/search?q=${encodeURIComponent(
             search.trim(),
           )}`,
         );
@@ -169,7 +165,7 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/request/${friendToAdd._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/request/${friendToAdd._id}`,
         {
           method: "POST",
         },
@@ -204,7 +200,7 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
   const acceptRequest = async (userId) => {
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/accept/${userId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/accept/${userId}`,
         {
           method: "POST",
         },
@@ -226,7 +222,7 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
   const rejectRequest = async (userId) => {
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/reject/${userId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/reject/${userId}`,
         {
           method: "POST",
         },
@@ -266,7 +262,7 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/${friendToRemove._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/${friendToRemove._id}`,
         {
           method: "DELETE",
         },
@@ -358,7 +354,7 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="chime-scrollbar min-h-0 flex-1 overflow-y-auto">
         <div className="w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           {isLoading ? (
             <div className="flex min-h-48 items-center justify-center">
@@ -412,7 +408,7 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
                           No users found
                         </div>
                       ) : (
-                        <div className="max-h-80 overflow-y-auto">
+                        <div className="chime-scrollbar max-h-80 overflow-y-auto">
                           {searchResults.map((person) => (
                             <div
                               key={person._id}

@@ -212,8 +212,8 @@ function Notifications({
     try {
       const endpoint =
         action === "accept"
-          ? `http://localhost:5000/api/friends/accept/${userId}`
-          : `http://localhost:5000/api/friends/reject/${userId}`;
+          ? `${import.meta.env.VITE_BACKEND_URL}/api/friends/accept/${userId}`
+          : `${import.meta.env.VITE_BACKEND_URL}/api/friends/reject/${userId}`;
 
       const response = await authFetch(endpoint, {
         method: "POST",
@@ -336,7 +336,7 @@ function Notifications({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="chime-scrollbar min-h-0 flex-1 overflow-y-auto">
         {loading ? (
           <div className="px-5 py-8">
             <p className="text-sm text-chime-secondary">

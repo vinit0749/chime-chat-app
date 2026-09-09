@@ -7,6 +7,79 @@ import Cluster from "../models/Cluster.js";
 import ClusterMember from "../models/ClusterMember.js";
 import getOrCreateConversation from "../utils/conversation.js";
 
+const verifyDirectMessageAccess = async (currentUserId, otherUserId) => {
+  if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Invalid user ID",
+    };
+  }
+
+  if (String(currentUserId) === String(otherUserId)) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Invalid conversation",
+    };
+  }
+
+  const [currentUser, otherUser] = await Promise.all([
+    User.findById(currentUserId).select("blockedUsers"),
+    User.findById(otherUserId).select("blockedUsers isDeleted"),
+  ]);
+
+  if (!currentUser || !otherUser || otherUser.isDeleted) {
+    return {
+      ok: false,
+      status: 404,
+      message: "User not found",
+    };
+  }
+
+  const isBlocked =
+    (currentUser.blockedUsers || []).some(
+      (blockedId) => String(blockedId) === String(otherUserId),
+    ) ||
+    (otherUser.blockedUsers || []).some(
+      (blockedId) => String(blockedId) === String(currentUserId),
+    );
+
+  if (isBlocked) {
+    return {
+      ok: false,
+      status: 403,
+      message: "You cannot access this conversation",
+    };
+  }
+
+  const friendship = await Friendship.findOne({
+    status: "accepted",
+    $or: [
+      {
+        requester: currentUserId,
+        recipient: otherUserId,
+      },
+      {
+        requester: otherUserId,
+        recipient: currentUserId,
+      },
+    ],
+  });
+
+  if (!friendship) {
+    return {
+      ok: false,
+      status: 403,
+      message: "You can only access direct messages with your friends",
+    };
+  }
+
+  return {
+    ok: true,
+  };
+};
+
 export const sendMessage = async (req, res) => {
   try {
     const { content, recipient, cluster, replyTo } = req.body;
@@ -148,6 +221,25 @@ export const sendMessage = async (req, res) => {
     if (!recipientUser || recipientUser.isDeleted) {
       return res.status(404).json({
         message: "User not found",
+      });
+    }
+
+    const [sender, target] = await Promise.all([
+      User.findById(userId).select("blockedUsers"),
+      User.findById(recipient).select("blockedUsers"),
+    ]);
+
+    const isBlocked =
+      (sender?.blockedUsers || []).some(
+        (blockedId) => String(blockedId) === String(recipient),
+      ) ||
+      (target?.blockedUsers || []).some(
+        (blockedId) => String(blockedId) === String(userId),
+      );
+
+    if (isBlocked) {
+      return res.status(403).json({
+        message: "You cannot send a direct message to this user",
       });
     }
 
@@ -348,15 +440,14 @@ export const getDirectMessages = async (req, res) => {
     const currentUserId = req.user.userId;
     const otherUserId = req.params.userId;
 
-    if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
-      return res.status(400).json({
-        message: "Invalid user ID",
-      });
-    }
+    const accessCheck = await verifyDirectMessageAccess(
+      currentUserId,
+      otherUserId,
+    );
 
-    if (String(currentUserId) === String(otherUserId)) {
-      return res.status(400).json({
-        message: "Invalid conversation",
+    if (!accessCheck.ok) {
+      return res.status(accessCheck.status).json({
+        message: accessCheck.message,
       });
     }
 
@@ -430,15 +521,14 @@ export const markDirectConversationRead = async (req, res) => {
     const currentUserId = req.user.userId;
     const otherUserId = req.params.userId;
 
-    if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
-      return res.status(400).json({
-        message: "Invalid user ID",
-      });
-    }
+    const accessCheck = await verifyDirectMessageAccess(
+      currentUserId,
+      otherUserId,
+    );
 
-    if (String(currentUserId) === String(otherUserId)) {
-      return res.status(400).json({
-        message: "Invalid conversation",
+    if (!accessCheck.ok) {
+      return res.status(accessCheck.status).json({
+        message: accessCheck.message,
       });
     }
 
@@ -730,15 +820,14 @@ export const clearDirectMessages = async (req, res) => {
     const currentUserId = req.user.userId;
     const otherUserId = req.params.userId;
 
-    if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
-      return res.status(400).json({
-        message: "Invalid user ID",
-      });
-    }
+    const accessCheck = await verifyDirectMessageAccess(
+      currentUserId,
+      otherUserId,
+    );
 
-    if (String(currentUserId) === String(otherUserId)) {
-      return res.status(400).json({
-        message: "Invalid conversation",
+    if (!accessCheck.ok) {
+      return res.status(accessCheck.status).json({
+        message: accessCheck.message,
       });
     }
 

@@ -76,7 +76,7 @@ function useSidebarActions({
 
       if (modal.type === "sendRequest") {
         const response = await fetch(
-          `http://localhost:5000/api/friends/request/${modal.user._id}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/friends/request/${modal.user._id}`,
           {
             method: "POST",
             headers: {
@@ -100,7 +100,7 @@ function useSidebarActions({
         const userId = String(modal.user._id);
 
         const response = await fetch(
-          `http://localhost:5000/api/friends/${userId}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/friends/${userId}`,
           {
             method: "DELETE",
             headers: {
@@ -125,7 +125,7 @@ function useSidebarActions({
         const blockedId = String(modal.user._id);
 
         const response = await fetch(
-          `http://localhost:5000/api/friends/block/${blockedId}`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/friends/block/${blockedId}`,
           {
             method: "POST",
             headers: {

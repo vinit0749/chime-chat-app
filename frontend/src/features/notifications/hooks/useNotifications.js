@@ -14,7 +14,7 @@ function useNotifications() {
       setError("");
 
       const response = await authFetch(
-        "http://localhost:5000/api/notifications",
+        `${import.meta.env.VITE_BACKEND_URL}/api/notifications`,
       );
 
       if (!response.ok) {
@@ -35,7 +35,7 @@ function useNotifications() {
   const fetchUnreadCount = useCallback(async () => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/notifications/unread-count",
+        `${import.meta.env.VITE_BACKEND_URL}/api/notifications/unread-count`,
       );
 
       if (!response.ok) {
@@ -53,7 +53,7 @@ function useNotifications() {
   const markAllNotificationsRead = useCallback(async () => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/notifications/read-all",
+        `${import.meta.env.VITE_BACKEND_URL}/api/notifications/read-all`,
         {
           method: "PATCH",
         },
@@ -83,7 +83,7 @@ function useNotifications() {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/notifications/${notificationId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/notifications/${notificationId}`,
         {
           method: "DELETE",
         },
@@ -106,7 +106,7 @@ function useNotifications() {
   const deleteAllNotifications = useCallback(async () => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/notifications/all",
+        `${import.meta.env.VITE_BACKEND_URL}/api/notifications/all`,
         {
           method: "DELETE",
         },
@@ -130,7 +130,7 @@ function useNotifications() {
       return;
     }
 
-    const newSocket = io("http://localhost:5000", {
+    const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
       auth: {
         token,
       },

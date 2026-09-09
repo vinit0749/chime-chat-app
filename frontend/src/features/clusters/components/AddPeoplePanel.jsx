@@ -71,7 +71,7 @@ function AddPeoplePanel({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/members/${user._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/members/${user._id}`,
         {
           method: "POST",
         },
@@ -172,7 +172,7 @@ function AddPeoplePanel({
             )}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="chime-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
             {filteredFriends.length === 0 ? (
               <div className="flex min-h-48 items-center justify-center px-5">
                 <div className="text-center">

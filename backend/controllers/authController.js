@@ -69,6 +69,18 @@ export const loginUser = async (req, res) => {
       });
     }
 
+    if (user.authProvider !== "local") {
+      return res.status(401).json({
+        message: "Use the connected OAuth provider to sign in",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(401).json({
+        message: "Invalid email or password",
+      });
+    }
+
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
@@ -104,7 +116,23 @@ export const loginWithGoogle = async (req, res) => {
     const user = req.user;
 
     if (!user) {
-      return res.redirect("http://localhost:5173/login?error=google");
+      return res.redirect(
+        `${process.env.FRONTEND_URL || "http://localhost:5173"}/login?error=google`,
+      );
+    }
+
+    const io = req.app.get("io");
+
+    if (user.justCreatedFromGoogle && io) {
+      io.emit("user_profile_updated", {
+        user: {
+          _id: user._id,
+          username: user.username,
+          displayName: user.displayName || "",
+          profilePicture: user.profilePicture || "",
+          status: user.status,
+        },
+      });
     }
 
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
@@ -116,15 +144,18 @@ export const loginWithGoogle = async (req, res) => {
         id: user._id,
         username: user.username,
         email: user.email,
+        profilePicture: user.profilePicture || "",
       }),
     );
 
     res.redirect(
-      `http://localhost:5173/oauth-success?token=${token}&user=${userData}`,
+      `${process.env.FRONTEND_URL || "http://localhost:5173"}/oauth-success?token=${token}&user=${userData}`,
     );
   } catch (error) {
     console.error("Google login error:", error.message);
 
-    res.redirect("http://localhost:5173/login?error=google");
+    res.redirect(
+      `${process.env.FRONTEND_URL || "http://localhost:5173"}/login?error=google`,
+    );
   }
 };

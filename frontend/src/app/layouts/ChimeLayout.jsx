@@ -36,7 +36,9 @@ function ChimeLayout() {
 
     const checkFriendship = async () => {
       try {
-        const response = await authFetch("http://localhost:5000/api/friends");
+        const response = await authFetch(
+          `${import.meta.env.VITE_BACKEND_URL}/api/friends`,
+        );
 
         if (!response.ok) {
           return;

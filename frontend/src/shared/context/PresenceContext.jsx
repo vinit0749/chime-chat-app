@@ -14,7 +14,7 @@ export function PresenceProvider({ children }) {
       return;
     }
 
-    const presenceSocket = io("http://localhost:5000", {
+    const presenceSocket = io(import.meta.env.VITE_BACKEND_URL, {
       auth: {
         token,
       },

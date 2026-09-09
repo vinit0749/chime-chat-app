@@ -27,10 +27,24 @@ import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+const allowedImageMimeTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024,
+  },
+  fileFilter: (_req, file, callback) => {
+    if (!allowedImageMimeTypes.has(file.mimetype)) {
+      return callback(new Error("Unsupported image type"));
+    }
+
+    callback(null, true);
   },
 });
 

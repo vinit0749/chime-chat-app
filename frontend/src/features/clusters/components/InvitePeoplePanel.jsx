@@ -163,7 +163,7 @@ function InvitePeoplePanel({
             )}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="chime-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
             {filteredFriends.length === 0 ? (
               <div className="flex min-h-48 items-center justify-center px-5">
                 <div className="text-center">

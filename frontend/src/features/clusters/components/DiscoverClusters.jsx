@@ -21,7 +21,7 @@ function DiscoverClusters({ onSelectCluster, onBack }) {
   const fetchClusters = async () => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/clusters/public",
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/public`,
       );
 
       if (!response.ok) {
@@ -41,7 +41,7 @@ function DiscoverClusters({ onSelectCluster, onBack }) {
   const fetchPendingRequests = async () => {
     try {
       const response = await authFetch(
-        "http://localhost:5000/api/clusters/requests/mine",
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/requests/mine`,
       );
 
       if (!response.ok) {
@@ -70,7 +70,7 @@ function DiscoverClusters({ onSelectCluster, onBack }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/join`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/join`,
         {
           method: "POST",
         },
@@ -185,7 +185,7 @@ function DiscoverClusters({ onSelectCluster, onBack }) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="chime-scrollbar min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-6xl px-6 py-7 lg:px-8">
           {error && (
             <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">

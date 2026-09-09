@@ -1,9 +1,12 @@
 import express from "express";
+import mongoose from "mongoose";
 import authMiddleware from "../middleware/authMiddleware.js";
 import User from "../models/User.js";
 import Friendship from "../models/Friendship.js";
 import { createNotification } from "../utils/notificationService.js";
 import Notification from "../models/Notification.js";
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 const router = express.Router();
 
@@ -21,6 +24,12 @@ router.post("/request/:userId", authMiddleware, async (req, res) => {
   try {
     const currentUserId = req.user.userId;
     const targetUserId = req.params.userId;
+
+    if (!isValidObjectId(targetUserId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
 
     if (currentUserId === targetUserId) {
       return res.status(400).json({
@@ -161,6 +170,12 @@ router.post("/accept/:userId", authMiddleware, async (req, res) => {
     const currentUserId = req.user.userId;
     const requesterId = req.params.userId;
 
+    if (!isValidObjectId(requesterId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
+
     const currentUser = await User.findById(currentUserId);
     const requester = await User.findById(requesterId);
 
@@ -296,6 +311,12 @@ router.post("/reject/:userId", authMiddleware, async (req, res) => {
     const currentUserId = req.user.userId;
     const requesterId = req.params.userId;
 
+    if (!isValidObjectId(requesterId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
+
     const currentUser = await User.findById(currentUserId);
     const requester = await User.findById(requesterId);
 
@@ -412,6 +433,12 @@ router.delete("/:userId", authMiddleware, async (req, res) => {
     const currentUserId = req.user.userId;
     const friendId = req.params.userId;
 
+    if (!isValidObjectId(friendId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
+
     if (currentUserId === friendId) {
       return res.status(400).json({
         message: "You cannot unfriend yourself",
@@ -483,6 +510,12 @@ router.post("/block/:userId", authMiddleware, async (req, res) => {
   try {
     const currentUserId = req.user.userId;
     const targetUserId = req.params.userId;
+
+    if (!isValidObjectId(targetUserId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
 
     if (currentUserId === targetUserId) {
       return res.status(400).json({
@@ -562,6 +595,12 @@ router.delete("/block/:userId", authMiddleware, async (req, res) => {
   try {
     const currentUserId = req.user.userId;
     const targetUserId = req.params.userId;
+
+    if (!isValidObjectId(targetUserId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
 
     if (currentUserId === targetUserId) {
       return res.status(400).json({

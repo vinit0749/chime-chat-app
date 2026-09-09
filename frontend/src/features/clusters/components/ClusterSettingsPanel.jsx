@@ -88,7 +88,7 @@ function ClusterSettingsPanel({
 
       try {
         const response = await authFetch(
-          `http://localhost:5000/api/clusters/${cluster._id}/members`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/members`,
         );
 
         const data = await response.json();
@@ -267,7 +267,7 @@ function ClusterSettingsPanel({
       );
 
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/profile-picture`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/profile-picture`,
         {
           method: "PUT",
           body: formData,
@@ -324,7 +324,7 @@ function ClusterSettingsPanel({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}`,
         {
           method: "PATCH",
           headers: {
@@ -370,7 +370,7 @@ function ClusterSettingsPanel({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/members/${kickTarget._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/members/${kickTarget._id}`,
         {
           method: "DELETE",
         },
@@ -412,7 +412,7 @@ function ClusterSettingsPanel({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}`,
         {
           method: "DELETE",
         },
@@ -481,7 +481,7 @@ function ClusterSettingsPanel({
             </button>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="chime-scrollbar min-h-0 flex-1 overflow-y-auto">
             <section className="border-b border-stone-200 p-5 sm:p-6">
               <h3 className="text-xs font-bold uppercase tracking-wider text-chime-secondary">
                 General
@@ -682,7 +682,7 @@ function ClusterSettingsPanel({
                 </p>
               )}
 
-              <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border border-stone-200 bg-chime-chat p-1.5">
+              <div className="chime-scrollbar mt-3 max-h-72 overflow-y-auto rounded-xl border border-stone-200 bg-chime-chat p-1.5">
                 {isMembersLoading ? (
                   <div className="flex min-h-28 items-center justify-center px-4">
                     <p className="text-sm text-chime-secondary">

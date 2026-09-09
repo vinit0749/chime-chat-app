@@ -69,9 +69,9 @@ function ClusterMembersPanel({
       try {
         const [membersResponse, friendsResponse] = await Promise.all([
           authFetch(
-            `http://localhost:5000/api/clusters/${cluster._id}/members`,
+            `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/members`,
           ),
-          authFetch("http://localhost:5000/api/friends"),
+          authFetch(`${import.meta.env.VITE_BACKEND_URL}/api/friends`),
         ]);
 
         const membersData = await membersResponse.json();
@@ -286,7 +286,7 @@ function ClusterMembersPanel({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/request/${requestUser._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/request/${requestUser._id}`,
         {
           method: "POST",
         },
@@ -362,7 +362,7 @@ function ClusterMembersPanel({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/members/${kickTarget._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/members/${kickTarget._id}`,
         {
           method: "DELETE",
         },
@@ -512,7 +512,7 @@ function ClusterMembersPanel({
             <ClusterJoinRequestsPanel cluster={cluster} socket={socket} />
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="chime-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
             {isLoading ? (
               <div className="flex h-full items-center justify-center px-5">
                 <p className="text-sm text-chime-secondary">

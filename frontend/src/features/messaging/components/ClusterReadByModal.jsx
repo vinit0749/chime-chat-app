@@ -34,7 +34,7 @@ const ClusterReadByModal = ({ readers = [], onClose }) => {
           </button>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto p-3">
+        <div className="chime-scrollbar max-h-[60vh] overflow-y-auto p-3">
           {readers.length === 0 ? (
             <p className="px-3 py-6 text-center text-sm text-chime-secondary">
               No one has seen this message yet.

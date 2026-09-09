@@ -55,7 +55,7 @@ function useDmRelationship({
     const loadBlockedState = async () => {
       try {
         const response = await authFetch(
-          "http://localhost:5000/api/friends/blocked",
+          `${import.meta.env.VITE_BACKEND_URL}/api/friends/blocked`,
         );
 
         const data = await response.json();
@@ -138,8 +138,8 @@ function useDmRelationship({
 
       const response = await authFetch(
         isBlocking
-          ? `http://localhost:5000/api/friends/block/${targetUserId}`
-          : `http://localhost:5000/api/friends/${targetUserId}`,
+          ? `${import.meta.env.VITE_BACKEND_URL}/api/friends/block/${targetUserId}`
+          : `${import.meta.env.VITE_BACKEND_URL}/api/friends/${targetUserId}`,
         {
           method: isBlocking ? "POST" : "DELETE",
         },
@@ -182,7 +182,7 @@ function useDmRelationship({
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/friends/block/${targetUserId}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/friends/block/${targetUserId}`,
         {
           method: "DELETE",
         },

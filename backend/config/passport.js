@@ -22,13 +22,6 @@ passport.use(
         let user = await User.findOne({ email });
 
         if (user) {
-          console.log("Google OAuth user:", {
-            email,
-            authProvider: user.authProvider,
-            providerId: user.providerId,
-            googleProviderId: profile.id,
-          });
-
           if (user.isDeleted) {
             return done(null, false, {
               message: "This account has been deleted",
@@ -82,6 +75,8 @@ passport.use(
           providerId: profile.id,
           profilePicture: profile.photos?.[0]?.value || "",
         });
+
+        user.justCreatedFromGoogle = true;
 
         return done(null, user);
       } catch (error) {

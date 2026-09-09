@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import multer from "multer";
 import authMiddleware from "../middleware/authMiddleware.js";
 import User from "../models/User.js";
@@ -7,14 +8,29 @@ import ClusterMember from "../models/ClusterMember.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Notification from "../models/Notification.js";
+import Friendship from "../models/Friendship.js";
 import cloudinary from "../config/cloudinary.js";
 
 const router = express.Router();
+
+const allowedImageMimeTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024,
+  },
+  fileFilter: (_req, file, callback) => {
+    if (!allowedImageMimeTypes.has(file.mimetype)) {
+      return callback(new Error("Unsupported image type"));
+    }
+
+    callback(null, true);
   },
 });
 
@@ -313,6 +329,12 @@ router.delete("/me/profile-picture", authMiddleware, async (req, res) => {
 
 router.post("/pins/dm/:userId", authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
+
     const currentUser = await User.findById(req.user.userId);
 
     if (!currentUser || currentUser.isDeleted) {
@@ -332,6 +354,20 @@ router.post("/pins/dm/:userId", authMiddleware, async (req, res) => {
     if (String(targetUser._id) === String(currentUser._id)) {
       return res.status(400).json({
         message: "You cannot pin yourself",
+      });
+    }
+
+    const isBlocked =
+      (currentUser.blockedUsers || []).some(
+        (blockedId) => String(blockedId) === String(targetUser._id),
+      ) ||
+      (targetUser.blockedUsers || []).some(
+        (blockedId) => String(blockedId) === String(currentUser._id),
+      );
+
+    if (isBlocked) {
+      return res.status(403).json({
+        message: "You cannot pin this conversation",
       });
     }
 
@@ -375,185 +411,61 @@ router.post("/pins/dm/:userId", authMiddleware, async (req, res) => {
   }
 });
 
-router.delete("/me", authMiddleware, async (req, res) => {
+router.delete("/pins/dm/:userId", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
 
-    if (!user) {
+    const currentUser = await User.findById(req.user.userId);
+
+    if (!currentUser || currentUser.isDeleted) {
       return res.status(404).json({
         message: "User not found",
       });
     }
 
-    const userId = user._id;
-
-    const ownedClusters = await Cluster.find({
-      owner: userId,
-    }).select("_id profilePicturePublicId");
-
-    const ownedClusterIds = ownedClusters.map((cluster) => cluster._id);
-
-    if (user.profilePicturePublicId) {
-      try {
-        await cloudinary.uploader.destroy(user.profilePicturePublicId);
-      } catch (error) {
-        console.error(
-          "Failed to delete user profile picture from Cloudinary:",
-          error,
-        );
-      }
-    }
-
-    for (const cluster of ownedClusters) {
-      if (cluster.profilePicturePublicId) {
-        try {
-          await cloudinary.uploader.destroy(cluster.profilePicturePublicId);
-        } catch (error) {
-          console.error(
-            `Failed to delete Cluster profile picture ${cluster._id}:`,
-            error,
-          );
-        }
-      }
-    }
-
-    if (ownedClusterIds.length > 0) {
-      const io = req.app.get("io");
-
-      if (io) {
-        for (const clusterId of ownedClusterIds) {
-          io.to(`cluster:${String(clusterId)}`).emit("cluster_deleted", {
-            clusterId: String(clusterId),
-          });
-        }
-      }
-
-      await Message.deleteMany({
-        cluster: { $in: ownedClusterIds },
-      });
-
-      await ClusterMember.deleteMany({
-        cluster: { $in: ownedClusterIds },
-      });
-
-      await Notification.deleteMany({
-        targetType: "Cluster",
-        target: { $in: ownedClusterIds },
-      });
-
-      await User.updateMany(
-        {
-          pinnedClusters: { $in: ownedClusterIds },
-        },
-        {
-          $pull: {
-            pinnedClusters: { $in: ownedClusterIds },
-          },
-        },
-      );
-
-      await Cluster.deleteMany({
-        _id: { $in: ownedClusterIds },
-      });
-    }
-
-    await Message.deleteMany({
-      $or: [
-        {
-          sender: userId,
-          recipient: { $ne: null },
-        },
-        {
-          recipient: userId,
-        },
-      ],
-    });
-
-    await Message.updateMany(
-      {
-        sender: userId,
-        cluster: { $ne: null },
-      },
-      {
-        $set: {
-          senderUsername: "Deleted User",
-        },
-      },
+    currentUser.pinnedDMs = currentUser.pinnedDMs.filter(
+      (id) => String(id) !== String(req.params.userId),
     );
 
-    await Conversation.deleteMany({
-      participants: userId,
-    });
-
-    await ClusterMember.deleteMany({
-      user: userId,
-    });
-
-    await Notification.deleteMany({
-      $or: [
-        { recipient: userId },
-        { actor: userId },
-        {
-          targetType: "User",
-          target: userId,
-        },
-      ],
-    });
-
-    await User.updateMany(
-      {
-        $or: [
-          { friends: userId },
-          { friendRequestsSent: userId },
-          { friendRequestsReceived: userId },
-          { blockedUsers: userId },
-          { pinnedDMs: userId },
-        ],
-      },
-      {
-        $pull: {
-          friends: userId,
-          friendRequestsSent: userId,
-          friendRequestsReceived: userId,
-          blockedUsers: userId,
-          pinnedDMs: userId,
-        },
-      },
-    );
+    await currentUser.save();
 
     const io = req.app.get("io");
 
     if (io) {
-      io.emit("presence_update", {
-        userId: String(userId),
-        status: "offline",
+      io.to(`user:${currentUser._id}`).emit("conversation_pin_updated", {
+        type: "dm",
+        targetId: String(req.params.userId),
+        pinned: false,
       });
-
-      io.emit("user_deleted", {
-        userId: String(userId),
-      });
-
-      io.in(`user:${String(userId)}`).disconnectSockets(true);
     }
 
-    await User.deleteOne({
-      _id: userId,
-    });
-
-    return res.json({
-      message: "Account deleted permanently",
+    return res.status(200).json({
+      message: "Conversation unpinned",
+      type: "dm",
+      targetId: String(req.params.userId),
+      pinned: false,
     });
   } catch (error) {
-    console.error("Delete account error:", error);
+    console.error("Unpin DM error:", error);
 
     return res.status(500).json({
-      message: "Failed to delete account",
+      message: "Failed to unpin conversation",
     });
   }
 });
 
 router.post("/pins/cluster/:clusterId", authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.clusterId)) {
+      return res.status(400).json({
+        message: "Invalid cluster ID",
+      });
+    }
+
     const currentUser = await User.findById(req.user.userId);
 
     if (!currentUser || currentUser.isDeleted) {
@@ -618,6 +530,12 @@ router.post("/pins/cluster/:clusterId", authMiddleware, async (req, res) => {
 
 router.delete("/pins/cluster/:clusterId", authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.clusterId)) {
+      return res.status(400).json({
+        message: "Invalid cluster ID",
+      });
+    }
+
     const currentUser = await User.findById(req.user.userId);
 
     if (!currentUser || currentUser.isDeleted) {
@@ -725,6 +643,11 @@ router.get("/search", authMiddleware, async (req, res) => {
 
 router.get("/:userId", authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({
+        message: "Invalid user ID",
+      });
+    }
     const currentUser = await User.findById(req.user.userId).select(
       "friends friendRequestsSent friendRequestsReceived blockedUsers isDeleted",
     );
@@ -889,6 +812,10 @@ router.delete("/me", authMiddleware, async (req, res) => {
 
     await ClusterMember.deleteMany({
       user: userId,
+    });
+
+    await Friendship.deleteMany({
+      $or: [{ requester: userId }, { recipient: userId }],
     });
 
     await Notification.deleteMany({

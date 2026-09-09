@@ -27,7 +27,7 @@ function TransferOwnershipPanel({ isOpen, cluster, onClose, onTransferred }) {
 
       try {
         const response = await authFetch(
-          `http://localhost:5000/api/clusters/${cluster._id}/members`,
+          `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/members`,
         );
 
         const data = await response.json();
@@ -129,7 +129,7 @@ function TransferOwnershipPanel({ isOpen, cluster, onClose, onTransferred }) {
 
     try {
       const response = await authFetch(
-        `http://localhost:5000/api/clusters/${cluster._id}/ownership/${selectedMember.user._id}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/clusters/${cluster._id}/ownership/${selectedMember.user._id}`,
         {
           method: "PATCH",
         },
@@ -189,7 +189,7 @@ function TransferOwnershipPanel({ isOpen, cluster, onClose, onTransferred }) {
           </button>
         </header>
 
-        <div className="max-h-[60vh] overflow-y-auto p-4">
+        <div className="chime-scrollbar max-h-[60vh] overflow-y-auto p-4">
           {isLoading ? (
             <div className="flex min-h-48 items-center justify-center">
               <p className="text-sm text-chime-secondary">Loading members...</p>

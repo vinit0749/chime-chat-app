@@ -8,7 +8,6 @@ import PublicProfile from "../../features/users/components/PublicProfile";
 import DiscoverClusters from "../../features/clusters/components/DiscoverClusters";
 import Notifications from "../../features/notifications/components/Notifications";
 import useNotifications from "../../features/notifications/hooks/useNotifications";
-import { authFetch } from "../../shared/utils/authFetch";
 
 function ChimeLayout() {
   const [selectedChat, setSelectedChat] = useState(null);
@@ -28,58 +27,6 @@ function ChimeLayout() {
     deleteNotification,
     deleteAllNotifications,
   } = useNotifications();
-
-  useEffect(() => {
-    if (!selectedChat || selectedChat.type !== "dm") {
-      return;
-    }
-
-    const checkFriendship = async () => {
-      try {
-        const response = await authFetch(
-          `${import.meta.env.VITE_BACKEND_URL}/api/friends`,
-        );
-
-        if (!response.ok) {
-          return;
-        }
-
-        const data = await response.json();
-        const friends = data.friends || [];
-
-        const isFriend = friends.some(
-          (friend) => friend._id === selectedChat.user._id,
-        );
-
-        setSelectedChat((currentChat) => {
-          if (
-            !currentChat ||
-            currentChat.type !== "dm" ||
-            currentChat.user._id !== selectedChat.user._id
-          ) {
-            return currentChat;
-          }
-
-          if (currentChat.isFriend === isFriend) {
-            return currentChat;
-          }
-
-          return {
-            ...currentChat,
-            isFriend,
-          };
-        });
-      } catch (error) {
-        console.error("Failed to check friendship:", error);
-      }
-    };
-
-    checkFriendship();
-
-    const interval = setInterval(checkFriendship, 2000);
-
-    return () => clearInterval(interval);
-  }, [selectedChat?.type, selectedChat?.user?._id]);
 
   const handleSelectChat = (chat) => {
     setClusterMenuAction(null);
@@ -437,7 +384,11 @@ function ChimeLayout() {
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden md:hidden">
-          {mobileView === "sidebar" ? (
+          <div
+            className={`min-h-0 min-w-0 flex-1 ${
+              mobileView === "sidebar" ? "flex" : "hidden"
+            }`}
+          >
             <Sidebar
               mobile
               sidebarSection={sidebarSection}
@@ -457,9 +408,15 @@ function ChimeLayout() {
               notificationUnreadCount={unreadCount}
               activeView={activeView}
             />
-          ) : (
-            renderContent()
-          )}
+          </div>
+
+          <div
+            className={`min-h-0 min-w-0 flex-1 ${
+              mobileView === "sidebar" ? "hidden" : "flex"
+            }`}
+          >
+            {renderContent()}
+          </div>
         </div>
       </main>
     </div>

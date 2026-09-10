@@ -346,7 +346,7 @@ function Message({
         </button>
 
         <div
-          className={`min-w-0 max-w-[85%] sm:max-w-[70%] ${
+          className={`min-w-0 max-w-[92%] sm:max-w-[70%] ${
             isOwnMessage ? "text-right" : "text-left"
           }`}
         >

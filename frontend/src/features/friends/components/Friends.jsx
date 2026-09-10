@@ -590,22 +590,29 @@ function FriendRequests({ onOpenProfile, onSelectChat, onBack }) {
                             <button
                               type="button"
                               onClick={() => handleMessageFriend(friend)}
-                              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-sm font-semibold text-chime-secondary transition hover:bg-chime-gold hover:text-chime-text sm:flex-none"
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-200 text-chime-secondary transition hover:bg-chime-gold hover:text-chime-text sm:h-auto sm:w-auto sm:flex-none sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm sm:font-semibold"
                               title={`Message ${
+                                friend.displayName || `@${friend.username}`
+                              }`}
+                              aria-label={`Message ${
                                 friend.displayName || `@${friend.username}`
                               }`}
                             >
                               <MessageCircle size={16} />
-                              Message
+                              <span className="hidden sm:inline">Message</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => handleUnfriendClick(friend)}
-                              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-sm font-semibold text-chime-secondary transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:flex-none"
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-200 text-chime-secondary transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:h-auto sm:w-auto sm:flex-none sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm sm:font-semibold"
+                              title="Unfriend"
+                              aria-label={`Unfriend ${
+                                friend.displayName || `@${friend.username}`
+                              }`}
                             >
                               <UserMinus size={16} />
-                              Unfriend
+                              <span className="hidden sm:inline">Unfriend</span>
                             </button>
                           </div>
                         </div>

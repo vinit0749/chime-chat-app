@@ -409,7 +409,7 @@ function ChimeLayout() {
   };
 
   return (
-    <div className="flex h-screen min-w-0 overflow-hidden bg-chime-background">
+    <div className="flex h-screen min-w-0 overflow-hidden bg-chime-background md:h-screen max-md:h-dvh">
       <div className="hidden w-72 shrink-0 md:flex">
         <Sidebar
           sidebarSection={sidebarSection}
@@ -431,10 +431,12 @@ function ChimeLayout() {
         />
       </div>
 
-      <main className="flex min-w-0 flex-1">
-        <div className="hidden min-w-0 flex-1 md:flex">{renderContent()}</div>
+      <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="hidden min-h-0 min-w-0 flex-1 overflow-hidden md:flex">
+          {renderContent()}
+        </div>
 
-        <div className="flex min-w-0 flex-1 md:hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden md:hidden">
           {mobileView === "sidebar" ? (
             <Sidebar
               mobile

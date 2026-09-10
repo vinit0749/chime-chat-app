@@ -13,12 +13,12 @@ function SidebarFooter({
   renderPresenceIndicator,
 }) {
   return (
-    <>
-      <div className="space-y-1.5 border-t border-stone-200 pt-3">
+    <div className="border-t border-stone-200 pt-2">
+      <div className="grid grid-cols-2 gap-1.5">
         <button
           type="button"
           onClick={onDiscover}
-          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
+          className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
             activeView === "discover"
               ? "bg-chime-selected text-chime-text"
               : "text-chime-text hover:bg-chime-selected"
@@ -33,13 +33,13 @@ function SidebarFooter({
             }
           />
 
-          <span className="min-w-0 flex-1 truncate">Discover</span>
+          <span>Discover</span>
         </button>
 
         <button
           type="button"
           onClick={onOpenFriends}
-          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
+          className={`relative flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
             activeView === "friends"
               ? "bg-chime-selected text-chime-text"
               : "text-chime-text hover:bg-chime-selected"
@@ -54,7 +54,7 @@ function SidebarFooter({
             }
           />
 
-          <span className="min-w-0 flex-1 truncate">Friends</span>
+          <span>Friends</span>
 
           {requests.length > 0 && (
             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-chime-gold px-1.5 text-[11px] font-bold text-chime-text">
@@ -64,12 +64,12 @@ function SidebarFooter({
         </button>
       </div>
 
-      <div className="mt-3 border-t border-stone-200 pt-3">
+      <div className="mt-2.5 border-t border-stone-200 pt-2.5">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onOpenProfile}
-            className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left transition ${
+            className={`flex min-w-0 min-h-12 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-left transition ${
               activeView === "profile"
                 ? "bg-chime-selected"
                 : "hover:bg-chime-selected"
@@ -108,7 +108,7 @@ function SidebarFooter({
           <button
             type="button"
             onClick={onLogout}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
             title="Log out"
             aria-label="Log out"
           >
@@ -116,7 +116,7 @@ function SidebarFooter({
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

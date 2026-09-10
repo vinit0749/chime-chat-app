@@ -981,7 +981,7 @@ function ChatArea({
   };
 
   return (
-    <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-chime-chat">
+    <main className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-chime-chat">
       <header className="relative z-20 shrink-0 border-b border-stone-200 bg-chime-background">
         <div className="flex h-16 items-center px-4 md:px-6">
           <div className="flex min-w-0 flex-1 items-center">
@@ -1261,7 +1261,7 @@ function ChatArea({
 
       <div
         ref={messagesContainerRef}
-        className="chime-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto p-6 pb-1 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden"
+        className="chime-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-1 pt-3 md:p-6 md:pb-1 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden"
       >
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
@@ -1442,7 +1442,7 @@ function ChatArea({
 
       {((isDM && isOtherUserTyping) || (isCluster && clusterTypingLabel)) &&
         canMessage && (
-          <div className="shrink-0 px-6 pb-1">
+          <div className="shrink-0 px-3 pb-1 md:px-6">
             <div className="flex h-7 items-center gap-2 text-xs text-chime-secondary">
               <span>
                 {isDM ? `${chatDisplayName} is typing` : clusterTypingLabel}
@@ -1457,7 +1457,7 @@ function ChatArea({
           </div>
         )}
 
-      <div className="relative z-30 shrink-0">
+      <div className="relative z-30 shrink-0 bg-chime-background">
         {isDM && !canMessage ? (
           <div className="border-t border-stone-200 bg-chime-background px-6 py-4 text-center">
             <p className="text-sm font-medium text-chime-secondary">

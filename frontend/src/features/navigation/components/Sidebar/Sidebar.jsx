@@ -1078,15 +1078,15 @@ function Sidebar({
   return (
     <>
       <aside
-        className={`relative h-screen shrink-0 flex-col border-r border-stone-200 bg-chime-background ${
-          mobile ? "flex w-full" : "hidden w-72 md:flex"
+        className={`relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-stone-200 bg-chime-background ${
+          mobile ? "w-full" : "hidden w-72 md:flex"
         }`}
       >
-        <div className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 px-5">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 px-4 sm:px-5">
           <button
             type="button"
             onClick={handleGoHome}
-            className="flex items-center gap-2 text-left"
+            className="flex min-h-11 items-center gap-2 rounded-lg text-left"
             aria-label="Go to Chime home"
           >
             <img
@@ -1111,7 +1111,7 @@ function Sidebar({
           <button
             type="button"
             onClick={handleOpenNotifications}
-            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
+            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-chime-secondary transition hover:bg-chime-selected hover:text-chime-text"
             aria-label="Open notifications"
             title="Notifications"
           >
@@ -1119,14 +1119,14 @@ function Sidebar({
 
             {notificationUnreadCount > 0 && (
               <span
-                className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-chime-gold"
+                className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-chime-gold"
                 aria-label="Unread notifications"
               />
             )}
           </button>
         </div>
 
-        <nav className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-2">
+        <nav className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-3 pb-2">
           <div className="shrink-0">
             <SidebarSearch
               search={search}
@@ -1142,11 +1142,11 @@ function Sidebar({
           </div>
 
           <div className="mt-2 shrink-0 border-b border-stone-200">
-            <div className="flex h-9">
+            <div className="flex min-h-11">
               <button
                 type="button"
                 onClick={() => onSidebarSectionChange("dms")}
-                className={`relative flex-1 px-2 text-xs font-semibold transition ${
+                className={`relative flex min-h-11 flex-1 items-center justify-center px-2 text-xs font-semibold transition ${
                   sidebarSection === "dms"
                     ? "text-chime-text"
                     : "text-chime-secondary hover:text-chime-text"
@@ -1170,7 +1170,7 @@ function Sidebar({
               <button
                 type="button"
                 onClick={() => onSidebarSectionChange("clusters")}
-                className={`relative flex-1 px-2 text-xs font-semibold transition ${
+                className={`relative flex min-h-11 flex-1 items-center justify-center px-2 text-xs font-semibold transition ${
                   sidebarSection === "clusters"
                     ? "text-chime-text"
                     : "text-chime-secondary hover:text-chime-text"
@@ -1193,7 +1193,7 @@ function Sidebar({
             </div>
           </div>
 
-          <div className="chime-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto overflow-x-visible pt-4">
+          <div className="chime-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto overflow-x-visible overscroll-contain pt-4">
             {sidebarSection === "dms" ? (
               <SidebarDirectMessages
                 conversations={conversations}

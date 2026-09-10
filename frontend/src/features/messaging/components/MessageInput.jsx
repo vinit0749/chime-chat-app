@@ -283,7 +283,7 @@ function MessageInput({
   const isEditing = Boolean(editingMessage);
 
   return (
-    <div className="border-t border-stone-200 bg-chime-background p-4">
+    <div className="border-t border-stone-200 bg-chime-background px-3 py-3 md:p-4">
       {isEditing && (
         <div className="mb-3 flex items-center gap-3 rounded-xl border border-stone-200 bg-chime-chat px-3 py-2.5">
           <div className="min-w-0 flex-1 border-l-2 border-chime-gold pl-3">
@@ -328,7 +328,10 @@ function MessageInput({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-3">
+      <form
+        onSubmit={handleSubmit}
+        className="flex min-w-0 items-center gap-2 md:gap-3"
+      >
         <input
           ref={inputRef}
           type="text"
@@ -341,14 +344,14 @@ function MessageInput({
           }
           value={content}
           onChange={handleTyping}
-          className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-chime-chat px-4 py-3 text-sm text-chime-text outline-none placeholder:text-chime-secondary focus:border-chime-gold"
+          className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-chime-chat px-3 py-3 text-sm text-chime-text outline-none placeholder:text-chime-secondary focus:border-chime-gold md:px-4"
         />
 
         {isEditing && (
           <button
             type="button"
             onClick={handleCancelEdit}
-            className="shrink-0 rounded-xl border border-stone-200 bg-chime-background px-4 py-3 font-semibold text-chime-secondary hover:bg-stone-100 hover:text-chime-text"
+            className="shrink-0 rounded-xl border border-stone-200 bg-chime-background px-3 py-3 text-sm font-semibold text-chime-secondary hover:bg-stone-100 hover:text-chime-text md:px-4"
           >
             Cancel
           </button>
@@ -356,7 +359,7 @@ function MessageInput({
 
         <button
           type="submit"
-          className="shrink-0 rounded-xl bg-chime-gold px-5 py-3 font-semibold text-chime-text hover:bg-chime-bright"
+          className="shrink-0 rounded-xl bg-chime-gold px-4 py-3 text-sm font-semibold text-chime-text hover:bg-chime-bright md:px-5"
         >
           {isEditing ? "Save" : "Send"}
         </button>

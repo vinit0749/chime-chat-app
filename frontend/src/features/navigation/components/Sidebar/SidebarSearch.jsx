@@ -17,7 +17,7 @@ function SidebarSearch({
         <button
           type="button"
           disabled
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary md:h-8 md:w-8"
           title="Already friends"
         >
           <Check size={16} />
@@ -33,7 +33,7 @@ function SidebarSearch({
         <button
           type="button"
           disabled
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-chime-selected text-chime-secondary md:h-8 md:w-8"
           title={
             person.relationshipStatus === "sent"
               ? "Friend request sent"
@@ -52,8 +52,9 @@ function SidebarSearch({
           event.stopPropagation();
           onAddFriend(person);
         }}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-chime-text transition hover:bg-chime-gold"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-chime-text transition hover:bg-chime-gold md:h-8 md:w-8"
         title="Add friend"
+        aria-label="Add friend"
       >
         <UserPlus size={16} />
       </button>
@@ -62,7 +63,7 @@ function SidebarSearch({
 
   return (
     <div ref={searchRef} className="relative">
-      <div className="flex items-center rounded-xl border border-stone-200 bg-chime-chat px-3">
+      <div className="flex min-h-11 items-center rounded-xl border border-stone-200 bg-chime-chat px-3">
         <Search size={17} className="shrink-0 text-chime-secondary" />
 
         <input
@@ -75,7 +76,7 @@ function SidebarSearch({
       </div>
 
       {search.trim() && (
-        <div className="absolute left-0 right-0 top-12 z-30 overflow-hidden rounded-xl border border-stone-200 bg-chime-background shadow-lg">
+        <div className="absolute left-0 right-0 top-12 z-30 max-h-[min(60vh,28rem)] overflow-y-auto rounded-xl border border-stone-200 bg-chime-background shadow-lg">
           {isSearching ? (
             <p className="px-4 py-3 text-sm text-chime-secondary">
               Searching...
@@ -88,7 +89,7 @@ function SidebarSearch({
             searchResults.map((person) => (
               <div
                 key={person._id}
-                className="flex items-center gap-2 px-3 py-3 transition hover:bg-chime-selected"
+                className="flex min-h-14 items-center gap-2 px-3 py-2 transition hover:bg-chime-selected"
               >
                 <button
                   type="button"
@@ -129,7 +130,7 @@ function SidebarSearch({
                     event.stopPropagation();
                     onMessageUser(person);
                   }}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-gold hover:text-chime-text"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-chime-secondary transition hover:bg-chime-gold hover:text-chime-text md:h-8 md:w-8"
                   title={`Message ${
                     person.displayName || `@${person.username}`
                   }`}

@@ -346,7 +346,7 @@ function Message({
         </button>
 
         <div
-          className={`min-w-0 max-w-[70%] ${
+          className={`min-w-0 max-w-[85%] sm:max-w-[70%] ${
             isOwnMessage ? "text-right" : "text-left"
           }`}
         >
@@ -364,7 +364,7 @@ function Message({
             onPointerMove={cancelLongPress}
             onPointerCancel={cancelLongPress}
             onPointerLeave={cancelLongPress}
-            className={`inline-block max-w-full select-text rounded-2xl border px-3.5 py-2 text-sm leading-relaxed ${
+            className={`inline-block max-w-full select-text rounded-2xl border px-3 py-2 text-sm leading-relaxed sm:px-3.5 ${
               isOwnMessage
                 ? "rounded-tr-md border-chime-gold bg-chime-gold text-chime-text"
                 : "rounded-tl-md border-stone-200 bg-chime-background text-chime-text"

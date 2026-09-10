@@ -135,19 +135,21 @@ function SidebarDirectMessages({
                     {conversation.displayName || `@${conversation.username}`}
                   </span>
 
-                  {isPinned && (
-                    <Pin
-                      size={18}
-                      strokeWidth={2.5}
-                      className="shrink-0 rotate-45 text-chime-gold"
-                    />
-                  )}
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {unreadCount !== null && (
+                      <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-chime-gold px-2 text-[11px] font-bold text-chime-text">
+                        {unreadCount}
+                      </span>
+                    )}
 
-                  {unreadCount !== null && (
-                    <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-chime-gold px-2 text-[11px] font-bold text-chime-text">
-                      {unreadCount}
-                    </span>
-                  )}
+                    {isPinned && (
+                      <Pin
+                        size={18}
+                        strokeWidth={2.5}
+                        className="shrink-0 rotate-45 text-chime-gold"
+                      />
+                    )}
+                  </div>
                 </button>
 
                 {isMenuTarget &&

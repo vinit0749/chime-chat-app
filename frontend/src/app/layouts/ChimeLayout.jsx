@@ -341,6 +341,7 @@ function ChimeLayout() {
     return (
       <ChatArea
         selectedChat={selectedChat}
+        isMobileChatVisible={mobileView === "chat"}
         onOpenProfile={handleOpenUserProfile}
         onUserDeleted={handleUserDeleted}
         onOpenOwnProfile={handleOpenProfile}

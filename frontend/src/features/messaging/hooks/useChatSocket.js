@@ -656,7 +656,6 @@ function useChatSocket({
     };
 
     newSocket.on("new_cluster_message", handleClusterMessage);
-    newSocket.on("cluster_message_received", handleClusterMessage);
 
     newSocket.on("new_message", (newMessage) => {
       if (!newMessage?._id) {

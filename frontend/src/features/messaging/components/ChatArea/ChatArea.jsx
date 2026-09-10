@@ -26,6 +26,7 @@ import { authFetch } from "../../../../shared/utils/authFetch";
 
 function ChatArea({
   selectedChat,
+  isMobileChatVisible,
   onOpenProfile,
   onUserDeleted,
   onMobileBack,
@@ -333,6 +334,13 @@ function ChatArea({
       return;
     }
 
+    if (
+      window.matchMedia("(max-width: 767px)").matches &&
+      !isMobileChatVisible
+    ) {
+      return;
+    }
+
     const senderId = selectedChat.user?._id;
 
     if (!senderId) {
@@ -353,7 +361,7 @@ function ChatArea({
     socket.emit("mark_messages_read", {
       senderId,
     });
-  }, [socket, selectedChat, messages, dmRelationship]);
+  }, [socket, selectedChat, messages, dmRelationship, isMobileChatVisible]);
 
   useEffect(() => {
     if (
@@ -361,6 +369,13 @@ function ChatArea({
       selectedChat.type !== "dm" ||
       dmRelationship !== "friend" ||
       messages.length === 0
+    ) {
+      return;
+    }
+
+    if (
+      window.matchMedia("(max-width: 767px)").matches &&
+      !isMobileChatVisible
     ) {
       return;
     }
@@ -385,7 +400,7 @@ function ChatArea({
     };
 
     markConversationRead();
-  }, [selectedChat, messages, dmRelationship]);
+  }, [selectedChat, messages, dmRelationship, isMobileChatVisible]);
 
   useEffect(() => {
     if (

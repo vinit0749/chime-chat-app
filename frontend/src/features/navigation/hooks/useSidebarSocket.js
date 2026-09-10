@@ -161,41 +161,6 @@ function useSidebarSocket({
       });
     });
 
-    socket.on("new_cluster_message", (data) => {
-      const clusterId = String(data?.clusterId || data?.message?.cluster || "");
-
-      if (!clusterId) {
-        return;
-      }
-
-      const message = data?.message || data;
-      const senderId = String(message?.sender?._id || message?.sender || "");
-
-      if (!senderId || senderId === String(userId)) {
-        return;
-      }
-
-      setClusters((currentClusters) =>
-        currentClusters.map((cluster) => {
-          if (String(cluster._id) !== clusterId) {
-            return cluster;
-          }
-
-          if (activeViewRef.current === `cluster-${clusterId}`) {
-            return {
-              ...cluster,
-              unreadCount: 0,
-            };
-          }
-
-          return {
-            ...cluster,
-            unreadCount: Math.max(0, (cluster.unreadCount || 0) + 1),
-          };
-        }),
-      );
-    });
-
     socket.on("cluster_message_received", (data) => {
       const clusterId = String(data?.clusterId || data?.message?.cluster || "");
 

@@ -313,45 +313,51 @@ function Message({
       <div
         ref={messageRef}
         data-message-id={messageId}
-        className={`flex w-full gap-0 rounded-xl px-0 transition-colors duration-300 sm:gap-3 ${
-          isOwnMessage ? "flex-row-reverse" : "flex-row"
-        } mb-1 ${isHighlighted ? "bg-chime-gold/20 px-2 py-1" : ""}`}
+        className={`mb-1 flex w-full items-start gap-0 rounded-xl px-0 transition-colors duration-300 sm:gap-3 ${
+          isOwnMessage ? "justify-end" : "justify-start"
+        } ${isHighlighted ? "bg-chime-gold/20 px-2 py-1" : ""}`}
       >
-        <button
-          type="button"
-          onClick={() => {
-            if (userId && onOpenProfile) {
-              onOpenProfile(userId);
-            }
-          }}
-          disabled={!userId || !onOpenProfile}
-          className={`hidden h-10 w-10 shrink-0 overflow-hidden rounded-full sm:block ${avatarColor} ${
-            isGrouped ? "invisible" : ""
-          } ${
-            userId && onOpenProfile
-              ? "cursor-pointer transition hover:opacity-80"
-              : "cursor-default"
-          }`}
-          aria-label={`View ${profileName}'s profile`}
-        >
-          {profilePicture ? (
-            <img
-              src={profilePicture}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className={`h-full w-full ${avatarColor}`} />
-          )}
-        </button>
+        {!isOwnMessage && (
+          <button
+            type="button"
+            onClick={() => {
+              if (userId && onOpenProfile) {
+                onOpenProfile(userId);
+              }
+            }}
+            disabled={!userId || !onOpenProfile}
+            className={`hidden h-10 w-10 shrink-0 overflow-hidden rounded-full sm:block ${avatarColor} ${
+              isGrouped ? "invisible" : ""
+            } ${
+              userId && onOpenProfile
+                ? "cursor-pointer transition hover:opacity-80"
+                : "cursor-default"
+            }`}
+            aria-label={`View ${profileName}'s profile`}
+          >
+            {profilePicture ? (
+              <img
+                src={profilePicture}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className={`h-full w-full ${avatarColor}`} />
+            )}
+          </button>
+        )}
 
         <div
-          className={`min-w-0 max-w-[92%] sm:max-w-[70%] ${
-            isOwnMessage ? "text-right" : "text-left"
+          className={`w-fit min-w-0 max-w-[92%] sm:max-w-[70%] ${
+            isOwnMessage ? "items-end" : "items-start"
           }`}
         >
           {!isGrouped && (
-            <div className="mb-1 text-[11px] font-bold text-chime-secondary">
+            <div
+              className={`mb-1 text-[11px] font-bold text-chime-secondary ${
+                isOwnMessage ? "text-right" : "text-left"
+              }`}
+            >
               {isOwnMessage ? "You" : profileName}
             </div>
           )}
@@ -364,7 +370,7 @@ function Message({
             onPointerMove={cancelLongPress}
             onPointerCancel={cancelLongPress}
             onPointerLeave={cancelLongPress}
-            className={`inline-block max-w-full select-text rounded-2xl border px-3 py-2 text-sm leading-relaxed sm:px-3.5 ${
+            className={`block w-fit max-w-full select-text rounded-2xl border px-3 py-2 text-left text-sm leading-relaxed sm:px-3.5 ${
               isOwnMessage
                 ? "rounded-tr-md border-chime-gold bg-chime-gold text-chime-text"
                 : "rounded-tl-md border-stone-200 bg-chime-background text-chime-text"
@@ -430,6 +436,36 @@ function Message({
                 </div>
               )}
         </div>
+
+        {isOwnMessage && (
+          <button
+            type="button"
+            onClick={() => {
+              if (userId && onOpenProfile) {
+                onOpenProfile(userId);
+              }
+            }}
+            disabled={!userId || !onOpenProfile}
+            className={`hidden h-10 w-10 shrink-0 overflow-hidden rounded-full sm:block ${avatarColor} ${
+              isGrouped ? "invisible" : ""
+            } ${
+              userId && onOpenProfile
+                ? "cursor-pointer transition hover:opacity-80"
+                : "cursor-default"
+            }`}
+            aria-label={`View ${profileName}'s profile`}
+          >
+            {profilePicture ? (
+              <img
+                src={profilePicture}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className={`h-full w-full ${avatarColor}`} />
+            )}
+          </button>
+        )}
       </div>
 
       {actionMenu}
